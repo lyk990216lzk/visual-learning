@@ -1,0 +1,40 @@
+# 用 Docker 运行 MySQL 8.0（推荐方式：不污染本机环境，删除方便）
+#
+#   docker compose up -d            启动数据库（首次会拉取镜像，约 600MB）
+#   docker compose ps               查看状态，STATUS 出现 (healthy) 才可用
+#   docker compose logs -f mysql    查看启动日志
+#   docker compose down             停止容器（数据仍保留在数据卷 mysql_data 中）
+#   docker compose down -v          停止并删除数据卷（等于清空数据库，慎用）
+#
+# 启动后即可执行数据迁移： bash scripts/migrate_to_mysql.sh
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: ir-mysql
+    restart: unless-stopped
+    command:
+      # 中文数据必须使用 utf8mb4
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      # 使用 mysql_native_password，避免部分客户端缺少 cryptography 依赖导致认证失败
+      - --default-authentication-plugin=mysql_native_password
+    environment:
+      MYSQL_ROOT_PASSWORD: root_pass_2026
+      MYSQL_DATABASE: image_recognition          # 容器首次启动时自动建库
+      MYSQL_USER: ir_user                        # 自动创建业务账号
+      MYSQL_PASSWORD: ir_pass_2026
+      TZ: Asia/Shanghai
+    ports:
+      - "3306:3306"                              # 本机 3306 -> 容器 3306
+    volumes:
+      - mysql_data:/var/lib/mysql                # 数据持久化，容器删除也不丢数据
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uir_user", "-pir_pass_2026"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+
+volumes:
+  mysql_data:

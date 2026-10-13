@@ -1,0 +1,315 @@
+:root {
+  --ir-bg: #0b1020;
+  --ir-panel: rgba(20, 27, 48, 0.86);
+  --ir-panel-strong: #141b30;
+  --ir-border: rgba(120, 145, 220, 0.18);
+  --ir-primary: #4f8cff;
+  --ir-accent: #36d1c4;
+  --ir-warn: #ffb454;
+  --ir-danger: #ff6b81;
+  --ir-text: #e8edf8;
+  --ir-text-dim: #97a3c4;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background:
+    radial-gradient(1100px 600px at 8% -10%, rgba(79, 140, 255, 0.22), transparent 60%),
+    radial-gradient(900px 520px at 100% 0%, rgba(54, 209, 196, 0.16), transparent 55%),
+    var(--ir-bg);
+  color: var(--ir-text);
+  font-family: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+
+.page {
+  padding: 18px 22px 28px;
+}
+
+.page-title {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  margin: 0;
+}
+
+.page-sub {
+  color: var(--ir-text-dim);
+  font-size: 13px;
+  margin: 6px 0 0;
+}
+
+.glass {
+  background: var(--ir-panel);
+  border: 1px solid var(--ir-border);
+  border-radius: 14px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 10px 30px rgba(4, 8, 20, 0.35);
+}
+
+.section {
+  padding: 16px 18px;
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.section-title .sub {
+  font-size: 12px;
+  color: var(--ir-text-dim);
+  font-weight: 400;
+}
+
+.grid {
+  display: grid;
+  gap: 14px;
+}
+
+.grid-4 {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.grid-2 {
+  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+}
+
+.grid-3 {
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+
+.dim {
+  color: var(--ir-text-dim);
+}
+
+.mono {
+  font-family: 'SFMono-Regular', Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+.prob-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.prob-label {
+  width: 96px;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.prob-track {
+  flex: 1;
+  height: 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+}
+
+.prob-fill {
+  height: 100%;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #4f8cff, #36d1c4);
+  transition: width 0.5s ease;
+}
+
+.prob-fill.top {
+  background: linear-gradient(90deg, #ffb454, #ff6b81);
+}
+
+.prob-value {
+  width: 60px;
+  text-align: right;
+  font-size: 12px;
+  color: var(--ir-text-dim);
+}
+
+.drop-zone {
+  border: 1.5px dashed rgba(120, 145, 220, 0.4);
+  border-radius: 14px;
+  padding: 12px;
+  text-align: center;
+  transition: all 0.2s ease;
+  background: rgba(79, 140, 255, 0.04);
+}
+
+.drop-zone:hover {
+  border-color: var(--ir-primary);
+  background: rgba(79, 140, 255, 0.1);
+}
+
+.preview-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 260px;
+  border-radius: 12px;
+  background: rgba(9, 13, 26, 0.7);
+  border: 1px solid var(--ir-border);
+  overflow: hidden;
+}
+
+.preview-box img {
+  max-width: 100%;
+  max-height: 360px;
+  image-rendering: auto;
+}
+
+.arch-card {
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: transform 0.18s ease, border-color 0.18s ease;
+}
+
+.arch-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(79, 140, 255, 0.6);
+}
+
+.arch-card.ready {
+  border-color: rgba(54, 209, 196, 0.45);
+}
+
+.arch-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.arch-name {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.arch-year {
+  font-size: 12px;
+  color: var(--ir-warn);
+}
+
+.tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.metrics-line {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--ir-text-dim);
+  margin-top: 8px;
+}
+
+.log-panel {
+  max-height: 260px;
+  overflow: auto;
+  background: #070b16;
+  border-radius: 10px;
+  border: 1px solid var(--ir-border);
+  padding: 10px 12px;
+  font-family: 'SFMono-Regular', Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #9fe3c8;
+  white-space: pre-wrap;
+}
+
+.el-card,
+.el-table,
+.el-descriptions,
+.el-dialog,
+.el-drawer {
+  --el-bg-color: var(--ir-panel-strong);
+}
+
+.el-table tr,
+.el-table th.el-table__cell {
+  background-color: transparent !important;
+}
+
+/* 固定列（sticky）必须有实心背景，否则横向滚动时会和下层单元格文字重叠。
+   这里的选择器要写到 (类·类·类+元素) 才能压过上面的 `.el-table th.el-table__cell` 透明规则。 */
+.el-table th.el-table__cell.el-table-fixed-column--right,
+.el-table th.el-table__cell.el-table-fixed-column--left,
+.el-table td.el-table__cell.el-table-fixed-column--right,
+.el-table td.el-table__cell.el-table-fixed-column--left {
+  background-color: var(--ir-panel-strong) !important;
+}
+
+.el-table th.el-table__cell.el-table-fixed-column--right,
+.el-table th.el-table__cell.el-table-fixed-column--left {
+  background-color: #18203a !important;
+}
+
+.el-table--enable-row-hover .el-table__body tr:hover > td.el-table__cell {
+  background-color: rgba(79, 140, 255, 0.1) !important;
+}
+
+.el-menu {
+  border-right: none;
+  background: transparent;
+}
+
+.el-menu-item.is-active {
+  background: linear-gradient(90deg, rgba(79, 140, 255, 0.28), rgba(79, 140, 255, 0.02)) !important;
+  border-right: 2px solid var(--ir-primary);
+}
+
+.sample-chip {
+  cursor: pointer;
+  border-radius: 10px;
+  border: 1px solid var(--ir-border);
+  padding: 6px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--ir-text-dim);
+}
+
+.sample-chip img {
+  width: 56px;
+  height: 56px;
+  border-radius: 8px;
+  display: block;
+  margin: 0 auto 4px;
+}
+
+/* 样例图加载中的占位块：与图片尺寸一致，避免标签文字跳动 */
+.sample-chip .sample-ph {
+  width: 56px;
+  height: 56px;
+  border-radius: 8px;
+  margin: 0 auto 4px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px dashed var(--ir-border);
+}
+
+.sample-chip:hover {
+  border-color: var(--ir-primary);
+  color: var(--ir-text);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(120, 145, 220, 0.35);
+  border-radius: 6px;
+}
