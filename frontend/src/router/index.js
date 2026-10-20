@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import MainLayout from '../layouts/MainLayout.vue'
 import { ElMessage } from 'element-plus'
 import { getStoredUser, getToken } from '../utils/auth'
+import { logAction } from '../utils/operationLog'
 
 const routes = [
   {
@@ -96,6 +97,13 @@ router.afterEach((to) => {
   document.title = to.meta?.title
     ? `${to.meta.title} · 深度学习图像识别系统`
     : '基于多种深度学习经典模型的图像识别系统'
+  if (to.meta?.public) return
+  logAction({
+    action: `进入「${to.meta?.title || to.path}」`,
+    detail: `页面 ${to.fullPath}`,
+    module: '页面',
+    level: 'info'
+  })
 })
 
 export default router

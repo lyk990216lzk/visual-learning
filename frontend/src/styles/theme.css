@@ -238,6 +238,17 @@ body {
   --el-bg-color: var(--ir-panel-strong);
 }
 
+/* 操作日志抽屉：铺满整块面板，由组件内部控制间距 */
+.oplog-overlay .el-drawer {
+  background: #0b1020;
+  border-left: 1px solid var(--ir-border);
+}
+
+.oplog-overlay .el-drawer__body {
+  padding: 0;
+  overflow: hidden;
+}
+
 .el-table tr,
 .el-table th.el-table__cell {
   background-color: transparent !important;

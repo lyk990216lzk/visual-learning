@@ -6,6 +6,7 @@ import EChart from '../components/EChart.vue'
 import ProbBars from '../components/ProbBars.vue'
 import { useAppStore } from '../store'
 import { fixed, labelText, percent } from '../utils/format'
+import { logAction } from '../utils/operationLog'
 import { SAMPLE_LABELS, sampleFile, sampleObjectUrl } from '../utils/samples'
 
 const store = useAppStore()
@@ -72,6 +73,12 @@ function pickFile(uploadFile) {
   file.value = raw
   previewUrl.value = URL.createObjectURL(raw)
   result.value = null
+  logAction({
+    action: '选择对比图片',
+    detail: raw.name || '图片',
+    module: '识别',
+    level: 'info'
+  })
   return false
 }
 
@@ -102,6 +109,11 @@ async function submit() {
     ElMessage.success(
       `对比完成：${result.value.results.length} 个模型，共识结果 ${labelText(result.value.consensus_label)}`
     )
+    logAction({
+      action: '多模型对比完成',
+      detail: `${result.value.results.length} 个模型 · 共识结果 ${labelText(result.value.consensus_label)}`,
+      module: '识别'
+    })
   } finally {
     loading.value = false
   }

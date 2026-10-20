@@ -1,6 +1,12 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import { clearToken, getToken } from '../utils/auth'
+import {
+  beginOperation,
+  describeRequest,
+  extractErrorMessage,
+  finishOperation
+} from '../utils/operationLog'
 
 const http = axios.create({
   baseURL: '/api',
@@ -13,12 +19,28 @@ http.interceptors.request.use((config) => {
     config.headers = config.headers || {}
     config.headers.Authorization = `Token ${token}`
   }
+  // 自动记录用户发起的业务请求，静默轮询（训练进度、样例图等）会被 describeRequest 过滤
+  if (config.logOperation !== false) {
+    const meta = describeRequest(config)
+    if (meta) config.__operationLogId = beginOperation(meta)
+  }
   return config
 })
 
 http.interceptors.response.use(
-  (response) => response.data,
+  (response) => {
+    if (response.config?.__operationLogId) {
+      finishOperation(response.config.__operationLogId, { level: 'success' })
+    }
+    return response.data
+  },
   (error) => {
+    if (error?.config?.__operationLogId) {
+      finishOperation(error.config.__operationLogId, {
+        level: 'error',
+        error: extractErrorMessage(error)
+      })
+    }
     // 登录态失效：清理本地令牌并跳回登录页
     if (error?.response?.status === 401) {
       clearToken()

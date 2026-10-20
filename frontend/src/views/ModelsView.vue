@@ -6,6 +6,7 @@ import EChart from '../components/EChart.vue'
 import { useAppStore } from '../store'
 import { useAuthStore } from '../store/auth'
 import { bytes, dateTime, fixed, percent } from '../utils/format'
+import { logAction } from '../utils/operationLog'
 
 const store = useAppStore()
 const auth = useAuthStore()
@@ -168,6 +169,11 @@ function openModel(model) {
 async function activate(model) {
   await api.activateModel(model.id)
   ElMessage.success(`已将「${model.name}」设为默认模型`)
+  logAction({
+    action: '切换默认模型',
+    detail: `${model.name} · ${model.architecture}`,
+    module: '模型'
+  })
   await store.fetchTrainedModels()
   await store.fetchArchitectures()
 }
@@ -176,6 +182,11 @@ async function evaluate(model) {
   ElMessage.info('正在重新评估模型，请稍候…')
   const data = await api.evaluateModel(model.id)
   ElMessage.success(`评估完成，准确率 ${percent(data.metrics.accuracy, 2)}`)
+  logAction({
+    action: '模型评估完成',
+    detail: `${model.name} · 准确率 ${percent(data.metrics.accuracy, 2)}`,
+    module: '模型'
+  })
   await store.fetchTrainedModels()
   const refreshed = store.trainedModels.find((item) => item.id === model.id)
   if (refreshed) activeModel.value = refreshed

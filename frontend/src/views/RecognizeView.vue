@@ -6,6 +6,7 @@ import EChart from '../components/EChart.vue'
 import ProbBars from '../components/ProbBars.vue'
 import { useAppStore } from '../store'
 import { labelText, percent } from '../utils/format'
+import { logAction } from '../utils/operationLog'
 import { SAMPLE_LABELS, sampleFile, sampleObjectUrl } from '../utils/samples'
 
 const store = useAppStore()
@@ -89,7 +90,18 @@ function pickFile(uploadFile) {
   file.value = raw
   previewUrl.value = URL.createObjectURL(raw)
   result.value = null
+  logAction({
+    action: '选择识别图片',
+    detail: `${raw.name}${raw.size ? ` · ${formatSize(raw.size)}` : ''}`,
+    module: '识别',
+    level: 'info'
+  })
   return false
+}
+
+function formatSize(size) {
+  if (size >= 1024 * 1024) return `${(size / 1024 / 1024).toFixed(2)} MB`
+  return `${Math.max(1, Math.round(size / 1024))} KB`
 }
 
 async function useSample(label) {
@@ -117,6 +129,11 @@ async function submit() {
   try {
     result.value = await api.recognize(formData)
     ElMessage.success(`识别结果：${labelText(result.value.predicted_label)}`)
+    logAction({
+      action: '识别完成',
+      detail: `结果 ${labelText(result.value.predicted_label)} · 置信度 ${percent(result.value.confidence, 1)} · 耗时 ${Math.round(result.value.latency_ms)}ms`,
+      module: '识别'
+    })
     loadHistory()
   } catch (error) {
     result.value = null
@@ -138,6 +155,11 @@ async function submitBatch() {
   try {
     batchResult.value = await api.recognizeBatch(formData)
     ElMessage.success(`批量识别完成，共 ${batchResult.value.total} 张`)
+    logAction({
+      action: '批量识别完成',
+      detail: `${batchResult.value.total} 张图片 · 模型 ${architecture.value}`,
+      module: '识别'
+    })
     loadHistory()
   } finally {
     batchLoading.value = false

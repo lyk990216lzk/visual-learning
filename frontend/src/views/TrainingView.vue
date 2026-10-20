@@ -5,6 +5,7 @@ import api from '../api'
 import EChart from '../components/EChart.vue'
 import { useAppStore } from '../store'
 import { STATUS_META, fixed, percent } from '../utils/format'
+import { logAction } from '../utils/operationLog'
 
 const store = useAppStore()
 const formRef = ref(null)
@@ -129,6 +130,11 @@ async function poll() {
       }
       if (data.status === 'success' && activeRun.value?.status !== 'success') {
         ElMessage.success(`训练完成，验证准确率 ${percent(data.best_accuracy, 2)}`)
+        logAction({
+          action: '训练完成',
+          detail: `${activeRun.value?.name || '训练任务'} · 验证准确率 ${percent(data.best_accuracy, 2)}`,
+          module: '训练'
+        })
         activeRun.value.status = 'success'
         await store.fetchTrainedModels()
         await store.fetchArchitectures()
@@ -166,6 +172,11 @@ async function buildDemoDataset() {
   await store.fetchDatasets()
   form.dataset = dataset.id
   ElMessage.success(`演示数据集已就绪：${dataset.image_count} 张图片 / ${dataset.num_classes} 个类别`)
+  logAction({
+    action: '演示数据集已生成',
+    detail: `${dataset.name} · ${dataset.image_count} 张图片 · ${dataset.num_classes} 个类别`,
+    module: '数据集'
+  })
 }
 
 async function submit() {

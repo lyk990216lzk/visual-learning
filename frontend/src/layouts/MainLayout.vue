@@ -4,6 +4,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAppStore } from '../store'
 import { useAuthStore } from '../store/auth'
+import OperationLogPanel from '../components/OperationLogPanel.vue'
+import { logAction } from '../utils/operationLog'
 
 const route = useRoute()
 const router = useRouter()
@@ -63,6 +65,16 @@ onMounted(() => {
   store.bootstrap()
   auth.fetchProfile().catch(() => {})
 })
+
+async function refreshAll() {
+  logAction({
+    action: '刷新系统数据',
+    detail: '模型结构 / 数据集 / 模型库 / 系统信息',
+    module: '系统',
+    level: 'info'
+  })
+  await store.bootstrap()
+}
 
 async function handleCommand(command) {
   if (command === 'password') {
@@ -134,7 +146,9 @@ async function submitPassword() {
           <el-tag v-if="deviceText" type="info" effect="dark" round>{{ deviceText }}</el-tag>
           <el-tag v-if="dbText" type="warning" effect="dark" round>数据库 {{ dbText }}</el-tag>
           <el-tag type="success" effect="dark" round>已就绪模型 {{ store.trainedModels.length }}</el-tag>
-          <el-button :icon="'Refresh'" circle @click="store.bootstrap()" />
+          <el-tooltip content="刷新系统数据" placement="bottom">
+            <el-button :icon="'Refresh'" circle @click="refreshAll" />
+          </el-tooltip>
 
           <el-dropdown trigger="click" @command="handleCommand">
             <div class="user-chip">
@@ -194,6 +208,8 @@ async function submitPassword() {
         <el-button type="primary" :loading="submitting" @click="submitPassword">确认修改</el-button>
       </template>
     </el-dialog>
+
+    <OperationLogPanel />
   </el-container>
 </template>
 
