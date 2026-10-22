@@ -7,6 +7,7 @@ from pathlib import Path
 from django.contrib.auth.models import User
 from rest_framework import serializers
 
+from ml.engine import SUPPORTED_DEVICES, is_device_available, normalize_device
 from ml.registry import architecture_keys
 
 from .models import Dataset, PredictionRecord, TrainedModel, TrainingRun
@@ -93,6 +94,15 @@ class TrainingRunCreateSerializer(serializers.ModelSerializer):
         if not 0 <= value < 1:
             raise serializers.ValidationError("验证集比例需在 [0, 1) 之间")
         return value
+
+    def validate_device(self, value):
+        device = normalize_device(value)
+        if device not in SUPPORTED_DEVICES:
+            raise serializers.ValidationError("计算设备仅支持 GPU、CPU 或 MPS")
+        if not is_device_available(device):
+            label = {"gpu": "GPU", "mps": "MPS"}.get(device, device.upper())
+            raise serializers.ValidationError(f"当前环境不支持 {label} 训练，请选择其它设备")
+        return device
 
     def validate(self, attrs):
         dataset = attrs["dataset"]

@@ -211,7 +211,7 @@ class PredictionRecord(models.Model):
     original_name = models.CharField("原始文件名", max_length=255, blank=True, default="")
     source = models.CharField("来源", max_length=20, choices=Source.choices, default=Source.UPLOAD)
     architecture = models.CharField("网络结构", max_length=40, blank=True, default="")
-    model_name = models.CharField("模型名称", max_length=120, blank=True, default="")
+    model_name = models.CharField("模型名", max_length=120, blank=True, default="")
     trained_model = models.ForeignKey(TrainedModel, on_delete=models.SET_NULL, null=True, blank=True,
                                       related_name="records", verbose_name="模型")
     predicted_label = models.CharField("预测类别", max_length=120, blank=True, default="")

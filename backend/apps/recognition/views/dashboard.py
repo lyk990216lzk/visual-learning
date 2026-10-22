@@ -15,7 +15,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ml import zoo
-from ml.engine import resolve_device
+from ml.engine import get_device_options, is_device_available, resolve_device
 from ml.predictor import model_store
 from ml.registry import list_architectures
 
@@ -59,8 +59,10 @@ def _system_info() -> dict:
         "torch": torch.__version__,
         "torchvision": getattr(__import__("torchvision"), "__version__", "unknown"),
         "device": str(device),
-        "cuda_available": torch.cuda.is_available(),
-        "mps_available": bool(getattr(torch.backends, "mps", None) and torch.backends.mps.is_available()),
+        "cuda_available": is_device_available("gpu"),
+        "gpu_available": is_device_available("gpu"),
+        "mps_available": is_device_available("mps"),
+        "device_options": get_device_options(),
         "cpu_count": torch.get_num_threads(),
         "architectures": len(list_architectures()),
         "loaded_models": len(model_store.loaded_ids()),

@@ -24,7 +24,8 @@ class Command(BaseCommand):
         parser.add_argument("--image-size", type=int, default=64)
         parser.add_argument("--optimizer", default="sgd", choices=["sgd", "adam", "adamw"])
         parser.add_argument("--scheduler", default="cosine", choices=["none", "step", "cosine"])
-        parser.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda", "mps"])
+        parser.add_argument("--device", default="auto",
+                            choices=["auto", "gpu", "cpu", "cuda", "mps"])
         parser.add_argument("--max-batches", type=int, default=0, help="每轮最多训练的 batch 数（0 表示全部）")
         parser.add_argument("--name", default="", help="任务名称")
         parser.add_argument("--quiet", action="store_true", help="只输出关键结果")

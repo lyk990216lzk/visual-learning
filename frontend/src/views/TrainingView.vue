@@ -17,6 +17,8 @@ const progress = ref(null)
 const logLines = ref([])
 const logBox = ref(null)
 const autoScroll = ref(true)
+const deviceChecking = ref(true)
+let lastAvailableDevice = 'cpu'
 let timer = null
 
 const form = reactive({
@@ -32,7 +34,7 @@ const form = reactive({
   image_size: 64,
   val_split: 0.2,
   label_smoothing: 0.0,
-  device: 'auto',
+  device: 'cpu',
   augment: true,
   max_batches_per_epoch: 0,
   class_weighted_loss: false
@@ -45,6 +47,38 @@ const rules = {
 
 const currentArchitecture = computed(() => store.architectureMap[form.architecture])
 const currentDataset = computed(() => store.datasets.find((item) => item.id === form.dataset))
+
+function sortDeviceOptions(options) {
+  return [...options].sort((a, b) => Number(!a.available) - Number(!b.available))
+}
+
+const deviceOptions = computed(() => {
+  const detected = store.system?.device_options
+  if (Array.isArray(detected) && detected.length) return sortDeviceOptions(detected)
+  return sortDeviceOptions([
+    {
+      value: 'gpu',
+      label: 'GPU',
+      available: Boolean(store.system?.gpu_available ?? store.system?.cuda_available),
+      detail: '当前环境未检测到可用的 CUDA GPU'
+    },
+    {
+      value: 'cpu',
+      label: 'CPU',
+      available: true,
+      detail: `使用 ${store.system?.cpu_count || '多'} 个 CPU 线程`
+    },
+    {
+      value: 'mps',
+      label: 'MPS',
+      available: Boolean(store.system?.mps_available),
+      detail: '当前环境未检测到可用的 Apple MPS'
+    }
+  ])
+})
+const currentDevice = computed(
+  () => deviceOptions.value.find((item) => item.value === form.device) || deviceOptions.value[1]
+)
 
 const recommendations = {
   lenet5: { learning_rate: 0.02, image_size: 32, epochs: 10, optimizer: 'adam' },
@@ -143,7 +177,50 @@ async function poll() {
   }
 }
 
+function useFirstAvailableDevice() {
+  const preferred = ['gpu', 'mps', 'cpu']
+  const option = preferred
+    .map((value) => deviceOptions.value.find((item) => item.value === value))
+    .find((item) => item?.available)
+  form.device = option?.value || 'cpu'
+  lastAvailableDevice = form.device
+}
+
+async function refreshDeviceAvailability() {
+  deviceChecking.value = true
+  try {
+    await store.fetchSystem()
+    useFirstAvailableDevice()
+  } catch {
+    form.device = 'cpu'
+    lastAvailableDevice = 'cpu'
+  } finally {
+    deviceChecking.value = false
+  }
+}
+
+async function handleDeviceChange(value) {
+  const option = deviceOptions.value.find((item) => item.value === value)
+  if (option?.available) {
+    lastAvailableDevice = value
+    return
+  }
+
+  form.device = lastAvailableDevice || 'cpu'
+  const label = option?.label || String(value).toUpperCase()
+  const alternative = deviceOptions.value
+    .filter((item) => item.available && item.value !== value)
+    .map((item) => item.label)
+    .join(' 或 ')
+  await ElMessageBox.alert(
+    `当前运行环境没有可用的 ${label}，本次选择未生效。请选择 ${alternative || 'CPU'}。`,
+    `${label} 不可用`,
+    { type: 'warning', confirmButtonText: '知道了' }
+  )
+}
+
 onMounted(async () => {
+  await refreshDeviceAvailability()
   if (!store.architectures.length) await store.bootstrap()
   if (!store.datasets.length) await store.fetchDatasets()
   form.dataset = store.datasets[0]?.id || null
@@ -183,6 +260,11 @@ async function submit() {
   await formRef.value?.validate()
   if (!store.datasets.length) {
     ElMessage.warning('请先创建数据集')
+    return
+  }
+  const selectedDevice = deviceOptions.value.find((item) => item.value === form.device)
+  if (!selectedDevice?.available) {
+    await handleDeviceChange(form.device)
     return
   }
   submitting.value = true
@@ -309,12 +391,21 @@ function rowClass({ row }) {
                        style="width: 100%" />
           </el-form-item>
           <el-form-item label="计算设备">
-            <el-radio-group v-model="form.device">
-              <el-radio-button value="auto">自动</el-radio-button>
-              <el-radio-button value="cpu">CPU</el-radio-button>
-              <el-radio-button value="mps">MPS</el-radio-button>
-              <el-radio-button value="cuda">CUDA</el-radio-button>
+            <el-radio-group v-model="form.device" :disabled="deviceChecking"
+                            @change="handleDeviceChange">
+              <el-radio-button
+                v-for="item in deviceOptions"
+                :key="item.value"
+                :value="item.value"
+                :class="{ 'device-unavailable': !item.available }"
+              >
+                <span>{{ item.label }}</span>
+                <span class="device-state">{{ item.available ? '可用' : '不可用' }}</span>
+              </el-radio-button>
             </el-radio-group>
+            <div class="device-hint">
+              {{ deviceChecking ? '正在检测训练设备…' : currentDevice?.detail }}
+            </div>
           </el-form-item>
           <el-form-item label="数据增强">
             <el-switch v-model="form.augment" />
@@ -447,5 +538,24 @@ function rowClass({ row }) {
 <style scoped>
 :deep(.active-row) {
   background: rgba(79, 140, 255, 0.14) !important;
+}
+
+:deep(.device-unavailable .el-radio-button__inner) {
+  border-style: dashed;
+  color: var(--ir-text-dim);
+}
+
+.device-state {
+  margin-left: 6px;
+  font-size: 10px;
+  opacity: 0.72;
+}
+
+.device-hint {
+  width: 100%;
+  margin-top: 6px;
+  color: var(--ir-text-dim);
+  font-size: 12px;
+  line-height: 1.5;
 }
 </style>

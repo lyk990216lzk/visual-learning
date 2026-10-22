@@ -18,16 +18,20 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+    import torch
+
+    print(torch.backends.mps.is_built(), torch.backends.mps.is_available())
 
 '''
 cd /Users/liuyakun/Documents/Codex/2026-09-22/recognition/backend
+cd /Users/liuyakun/Desktop/高级软件工程/大作业/recognition/backend
 
 # SQLite（默认）
 uv run python3 manage.py runserver 8000
 
 # MySQL 模式
 IR_DB_ENGINE=mysql IR_DB_NAME=image_recognition IR_DB_USER=ir_user IR_DB_PASSWORD=ir_pass_2026 \
-  uv run python3 manage.py runserver 8000
+  uv run python3 manage.uv run python3 manage.py runserver 8000py runserver 8000
   
 # 只用 SQLite（零配置，不用管 MySQL）
 bash scripts/start-backend.sh

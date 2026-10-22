@@ -14,21 +14,77 @@ import torch.nn as nn
 from .metrics import evaluate_model
 
 
+DEVICE_ALIASES = {"cuda": "gpu"}
+SUPPORTED_DEVICES = ("gpu", "cpu", "mps", "auto")
+
+
+def normalize_device(preference: str = "gpu") -> str:
+    """把界面设备名转换为训练引擎使用的规范名称。"""
+    name = (preference or "gpu").strip().lower()
+    return DEVICE_ALIASES.get(name, name)
+
+
+def is_device_available(preference: str) -> bool:
+    """检测指定训练设备在当前 Python 进程中是否可用。"""
+    name = normalize_device(preference)
+    if name == "cpu":
+        return True
+    if name == "gpu":
+        return torch.cuda.is_available()
+    if name == "mps":
+        mps = getattr(torch.backends, "mps", None)
+        return bool(mps and mps.is_available())
+    return name == "auto"
+
+
+def get_device_options() -> List[Dict]:
+    """返回训练配置可展示的设备及其实时可用状态。"""
+    gpu_available = is_device_available("gpu")
+    mps_available = is_device_available("mps")
+    gpu_name = torch.cuda.get_device_name(0) if gpu_available else ""
+    options = [
+        {
+            "value": "gpu",
+            "label": "GPU",
+            "available": gpu_available,
+            "detail": gpu_name or "当前环境未检测到可用的 CUDA GPU",
+        },
+        {
+            "value": "cpu",
+            "label": "CPU",
+            "available": True,
+            "detail": f"使用 {torch.get_num_threads()} 个 CPU 线程",
+        },
+        {
+            "value": "mps",
+            "label": "MPS",
+            "available": mps_available,
+            "detail": "Apple Metal 加速可用" if mps_available else "当前环境未检测到可用的 Apple MPS",
+        },
+    ]
+    return sorted(options, key=lambda item: not item["available"])
+
+
 def resolve_device(preference: str = "auto") -> torch.device:
-    """按 auto 策略优先选择 CUDA -> Apple MPS -> CPU。"""
-    preference = (preference or "auto").lower()
+    """解析训练设备；只有 auto 会在设备不可用时自动降级到 CPU。"""
+    preference = normalize_device(preference)
     if preference == "cpu":
         return torch.device("cpu")
-    if preference == "cuda" and torch.cuda.is_available():
-        return torch.device("cuda")
-    if preference == "mps" and getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
-        return torch.device("mps")
+    if preference == "gpu":
+        if torch.cuda.is_available():
+            return torch.device("cuda")
+        raise RuntimeError("当前环境未检测到可用的 GPU（CUDA），无法开始 GPU 训练")
+    if preference == "mps":
+        if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
+            return torch.device("mps")
+        raise RuntimeError("当前环境未检测到可用的 Apple MPS，无法开始 MPS 训练")
     if preference == "auto":
         if torch.cuda.is_available():
             return torch.device("cuda")
         if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
             return torch.device("mps")
-    return torch.device("cpu")
+        return torch.device("cpu")
+    raise ValueError(f"不支持的训练设备：{preference}")
 
 
 def choose_cpu_threads(model: nn.Module) -> int:
@@ -261,5 +317,6 @@ def warmup_lr(step: int, warmup: int, base_lr: float) -> float:
     return base_lr * (step + 1) / warmup
 
 
-__all__ = ["TrainConfig", "train_model", "resolve_device", "build_optimizer", "build_scheduler",
-           "cosine_curve_x"]
+__all__ = ["TrainConfig", "train_model", "resolve_device", "normalize_device",
+           "is_device_available", "get_device_options", "build_optimizer",
+           "build_scheduler", "cosine_curve_x"]
