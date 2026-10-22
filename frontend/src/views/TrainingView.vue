@@ -124,6 +124,7 @@ async function loadRuns() {
 async function selectRun(run) {
   activeRunId.value = run.id
   activeRun.value = await api.trainingRun(run.id)
+  store.setTrainingDevice(activeRun.value.device)
   progress.value = {
     status: activeRun.value.status,
     progress: activeRun.value.progress,
@@ -184,6 +185,7 @@ function useFirstAvailableDevice() {
     .find((item) => item?.available)
   form.device = option?.value || 'cpu'
   lastAvailableDevice = form.device
+  store.setTrainingDevice(form.device)
 }
 
 async function refreshDeviceAvailability() {
@@ -194,6 +196,7 @@ async function refreshDeviceAvailability() {
   } catch {
     form.device = 'cpu'
     lastAvailableDevice = 'cpu'
+    store.setTrainingDevice(form.device)
   } finally {
     deviceChecking.value = false
   }
@@ -203,10 +206,12 @@ async function handleDeviceChange(value) {
   const option = deviceOptions.value.find((item) => item.value === value)
   if (option?.available) {
     lastAvailableDevice = value
+    store.setTrainingDevice(value)
     return
   }
 
   form.device = lastAvailableDevice || 'cpu'
+  store.setTrainingDevice(form.device)
   const label = option?.label || String(value).toUpperCase()
   const alternative = deviceOptions.value
     .filter((item) => item.available && item.value !== value)

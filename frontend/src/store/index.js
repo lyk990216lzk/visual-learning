@@ -7,6 +7,7 @@ export const useAppStore = defineStore('app', {
     datasets: [],
     trainedModels: [],
     system: null,
+    trainingDevice: '',
     loading: false
   }),
   getters: {
@@ -19,6 +20,9 @@ export const useAppStore = defineStore('app', {
     activeModels: (state) => state.trainedModels.filter((item) => item.is_active)
   },
   actions: {
+    setTrainingDevice(device) {
+      this.trainingDevice = (device || '').toLowerCase()
+    },
     async fetchArchitectures() {
       const data = await api.architectures()
       this.architectures = data.results || []

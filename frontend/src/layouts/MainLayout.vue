@@ -46,11 +46,28 @@ function menuOrder(path) {
   return order.indexOf(path)
 }
 
+const activeDevice = computed(() => {
+  const rawDevice = (store.trainingDevice || store.system?.device || 'cpu').toLowerCase()
+  return rawDevice === 'cuda' ? 'gpu' : rawDevice
+})
+
 const deviceText = computed(() => {
-  const system = store.system
-  if (!system) return ''
-  const device = system.device?.toUpperCase?.() || 'CPU'
-  return `${device} · PyTorch ${system.torch}`
+  if (!store.system) return ''
+  const device = activeDevice.value.toUpperCase()
+  return `${device} · PyTorch ${store.system.torch}`
+})
+
+const deviceTagType = computed(() => {
+  const device = activeDevice.value
+  const option = store.system?.device_options?.find((item) => item.value === device)
+  if (option) return option.available ? 'success' : 'info'
+  if (device === 'cpu') return 'success'
+  if (device === 'gpu') {
+    const gpuAvailable = store.system?.gpu_available ?? store.system?.cuda_available
+    return gpuAvailable ? 'success' : 'info'
+  }
+  if (device === 'mps') return store.system?.mps_available ? 'success' : 'info'
+  return 'info'
 })
 
 const dbText = computed(() => {
@@ -143,7 +160,7 @@ async function submitPassword() {
           </div>
         </div>
         <div class="topbar-right">
-          <el-tag v-if="deviceText" type="info" effect="dark" round>{{ deviceText }}</el-tag>
+          <el-tag v-if="deviceText" :type="deviceTagType" effect="dark" round>{{ deviceText }}</el-tag>
           <el-tag v-if="dbText" type="warning" effect="dark" round>数据库 {{ dbText }}</el-tag>
           <el-tag type="success" effect="dark" round>已就绪模型 {{ store.trainedModels.length }}</el-tag>
           <el-tooltip content="刷新系统数据" placement="bottom">
