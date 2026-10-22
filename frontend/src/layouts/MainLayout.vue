@@ -42,7 +42,7 @@ const menus = computed(() =>
 )
 
 function menuOrder(path) {
-  const order = ['/dashboard', '/recognize', '/compare', '/models', '/records', '/training', '/datasets', '/users']
+  const order = ['/dashboard', '/models', '/datasets', '/training', '/recognize', '/compare', '/records', '/users']
   return order.indexOf(path)
 }
 

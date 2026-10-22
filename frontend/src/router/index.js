@@ -26,7 +26,7 @@ const routes = [
         path: 'recognize',
         name: 'recognize',
         component: () => import('../views/RecognizeView.vue'),
-        meta: { title: '图像识别', icon: 'Picture' }
+        meta: { title: '视觉识别', icon: 'Picture' }
       },
       {
         path: 'compare',
