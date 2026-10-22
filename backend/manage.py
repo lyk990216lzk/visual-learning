@@ -18,9 +18,7 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-    import torch
 
-    print(torch.backends.mps.is_built(), torch.backends.mps.is_available())
 
 '''
 cd /Users/liuyakun/Documents/Codex/2026-09-22/recognition/backend
