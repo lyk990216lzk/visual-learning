@@ -8,7 +8,7 @@ from django.core.management.base import BaseCommand, CommandError
 
 from apps.recognition.models import Dataset, TrainingRun
 from apps.recognition.serializers import TrainingRunCreateSerializer
-from ml.registry import architecture_keys, get_architecture
+from ml.registry import get_architecture, implemented_architecture_keys
 from ml.trainer import manager
 
 
@@ -16,7 +16,8 @@ class Command(BaseCommand):
     help = "创建并执行一个训练任务（前台阻塞，实时打印进度）"
 
     def add_arguments(self, parser):
-        parser.add_argument("--architecture", "-a", required=True, choices=architecture_keys())
+        parser.add_argument("--architecture", "-a", required=True,
+                            choices=implemented_architecture_keys())
         parser.add_argument("--dataset", "-d", required=True, help="数据集名称或 id")
         parser.add_argument("--epochs", "-e", type=int, default=5)
         parser.add_argument("--batch-size", type=int, default=32)

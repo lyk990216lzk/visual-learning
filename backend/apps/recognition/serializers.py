@@ -8,7 +8,7 @@ from django.contrib.auth.models import User
 from rest_framework import serializers
 
 from ml.engine import SUPPORTED_DEVICES, is_device_available, normalize_device
-from ml.registry import architecture_keys
+from ml.registry import implemented_architecture_keys
 
 from .models import Dataset, PredictionRecord, TrainedModel, TrainingRun
 
@@ -60,7 +60,9 @@ class TrainingRunSerializer(serializers.ModelSerializer):
 
 
 class TrainingRunCreateSerializer(serializers.ModelSerializer):
-    architecture = serializers.ChoiceField(choices=[(key, key) for key in architecture_keys()])
+    architecture = serializers.ChoiceField(
+        choices=[(key, key) for key in implemented_architecture_keys()]
+    )
     dataset = serializers.PrimaryKeyRelatedField(queryset=Dataset.objects.all())
 
     class Meta:

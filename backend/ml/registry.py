@@ -134,6 +134,127 @@ ARCHITECTURES: List[Dict] = [
     },
 ]
 
+# 当前可直接训练和推理的经典分类网络。
+for _architecture in ARCHITECTURES:
+    _architecture.setdefault("task", "classification")
+    _architecture.setdefault("implemented", True)
+
+# 目标检测与语义分割模型先纳入统一模型目录。具体训练/推理适配器接入后再切换为 True。
+ARCHITECTURES.extend([
+    {
+        "key": "yolov3",
+        "name": "YOLOv3",
+        "year": 2018,
+        "authors": "Joseph Redmon, Ali Farhadi",
+        "paper": "YOLOv3: An Incremental Improvement",
+        "family": "单阶段检测",
+        "task": "detection",
+        "implemented": False,
+        "default_input_size": 416,
+        "min_input_size": 320,
+        "description": "采用 Darknet-53 骨干和多尺度预测，在速度与精度之间取得良好平衡，是实时目标检测的代表性模型。",
+        "highlights": ["Darknet-53 骨干", "多尺度预测", "实时检测"],
+    },
+    {
+        "key": "yolov5",
+        "name": "YOLOv5",
+        "year": 2020,
+        "authors": "Glenn Jocher 等",
+        "paper": "YOLOv5",
+        "family": "单阶段检测",
+        "task": "detection",
+        "implemented": False,
+        "default_input_size": 640,
+        "min_input_size": 320,
+        "description": "以 PyTorch 工程化实现和易部署著称，提供多种规模配置，覆盖从边缘设备到服务器的检测场景。",
+        "highlights": ["PyTorch 实现", "多规格模型", "部署生态完善"],
+    },
+    {
+        "key": "yolov8",
+        "name": "YOLOv8",
+        "year": 2023,
+        "authors": "Ultralytics",
+        "paper": "Ultralytics YOLOv8 Documentation",
+        "family": "单阶段检测",
+        "task": "detection",
+        "implemented": False,
+        "default_input_size": 640,
+        "min_input_size": 320,
+        "description": "采用 Anchor-free 检测头与解耦结构，并统一支持检测、实例分割和姿态估计等视觉任务。",
+        "highlights": ["Anchor-free", "解耦检测头", "多任务支持"],
+    },
+    {
+        "key": "yolov10",
+        "name": "YOLOv10",
+        "year": 2024,
+        "authors": "Ao Wang 等",
+        "paper": "YOLOv10: Real-Time End-to-End Object Detection",
+        "family": "端到端检测",
+        "task": "detection",
+        "implemented": False,
+        "default_input_size": 640,
+        "min_input_size": 320,
+        "description": "通过一致的双重分配策略去除推理阶段 NMS，降低延迟并提升端到端检测效率。",
+        "highlights": ["NMS-free", "一致双重分配", "高效推理"],
+    },
+    {
+        "key": "yolov11",
+        "name": "YOLOv11",
+        "year": 2024,
+        "authors": "Ultralytics",
+        "paper": "Ultralytics YOLO11 Documentation",
+        "family": "单阶段检测",
+        "task": "detection",
+        "implemented": False,
+        "default_input_size": 640,
+        "min_input_size": 320,
+        "description": "在 YOLOv8 基础上优化骨干与检测头结构，进一步提升精度、速度和参数效率。",
+        "highlights": ["结构效率优化", "实时检测", "多任务统一"],
+    },
+    {
+        "key": "fcn",
+        "name": "FCN",
+        "year": 2015,
+        "authors": "Jonathan Long 等",
+        "paper": "Fully Convolutional Networks for Semantic Segmentation",
+        "family": "全卷积网络",
+        "task": "segmentation",
+        "implemented": False,
+        "default_input_size": 512,
+        "min_input_size": 256,
+        "description": "首个将卷积网络端到端用于语义分割的经典方法，用全卷积层替换分类网络末端并恢复像素级预测。",
+        "highlights": ["全卷积结构", "端到端分割", "像素级分类"],
+    },
+    {
+        "key": "unet",
+        "name": "U-Net",
+        "year": 2015,
+        "authors": "Olaf Ronneberger 等",
+        "paper": "U-Net: Convolutional Networks for Biomedical Image Segmentation",
+        "family": "编码器-解码器",
+        "task": "segmentation",
+        "implemented": False,
+        "default_input_size": 512,
+        "min_input_size": 256,
+        "description": "采用对称编码器-解码器和跳层连接，兼顾高层语义与精细边界，是小样本分割的经典基线。",
+        "highlights": ["U 型结构", "跳层连接", "边界细节清晰"],
+    },
+    {
+        "key": "deeplabv3",
+        "name": "DeepLabv3",
+        "year": 2017,
+        "authors": "Liang-Chieh Chen 等",
+        "paper": "Rethinking Atrous Convolution for Semantic Image Segmentation",
+        "family": "空洞卷积",
+        "task": "segmentation",
+        "implemented": False,
+        "default_input_size": 512,
+        "min_input_size": 256,
+        "description": "使用空洞卷积与 ASPP 聚合多尺度上下文，在保持分辨率的同时扩大网络感受野。",
+        "highlights": ["空洞卷积", "ASPP", "多尺度上下文"],
+    },
+])
+
 _ARCH_INDEX = {item["key"]: item for item in ARCHITECTURES}
 _SUMMARY_CACHE: Dict[tuple, Dict] = {}
 
@@ -149,6 +270,11 @@ def get_architecture(key: str) -> Optional[Dict]:
 
 def architecture_keys() -> List[str]:
     return list(_ARCH_INDEX.keys())
+
+
+def implemented_architecture_keys() -> List[str]:
+    """仅返回已经接入本系统训练与推理流程的网络。"""
+    return [item["key"] for item in ARCHITECTURES if item.get("implemented")]
 
 
 def architecture_summary(key: str, num_classes: int = 10, input_size: Optional[int] = None) -> Dict:
