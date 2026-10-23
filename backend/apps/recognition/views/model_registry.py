@@ -10,9 +10,12 @@ from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
 from ml.datasets import build_dataloaders
+from ml.detection import DetectionBackendError, evaluate_yolo_model
 from ml.engine import resolve_device
 from ml.metrics import evaluate_model
 from ml.predictor import PredictorError, model_store
+from ml.segmentation import build_segmentation_dataloaders, evaluate_segmentation
+from ml.task_predictor import task_model_cache
 
 from ..models import TrainedModel
 from ..permissions import IsAdminOrReadOnly
@@ -32,6 +35,9 @@ class TrainedModelViewSet(ModelViewSet):
         architecture = self.request.query_params.get("architecture")
         if architecture:
             queryset = queryset.filter(architecture=architecture)
+        task_type = self.request.query_params.get("task_type")
+        if task_type:
+            queryset = queryset.filter(task_type=task_type)
         active = self.request.query_params.get("is_active")
         if active in {"1", "true", "True"}:
             queryset = queryset.filter(is_active=True)
@@ -60,21 +66,43 @@ class TrainedModelViewSet(ModelViewSet):
             return Response({"detail": "该模型没有关联数据集，无法重新评估"},
                             status=status.HTTP_400_BAD_REQUEST)
         try:
-            entry = model_store.load(trained)
-        except PredictorError as exc:
+            if trained.task_type == "detection":
+                report = evaluate_yolo_model(
+                    trained,
+                    trained.dataset.dir_path,
+                    trained.dataset.weights_dir / f"_eval_{trained.id}",
+                    val_split=float(request.data.get("val_split", 0.2)),
+                    seed=int(request.data.get("seed", 42)),
+                    image_size=trained.input_size,
+                    device=request.data.get("device", "cpu"),
+                )
+            elif trained.task_type == "segmentation":
+                train_loader, val_loader, class_names, _ = build_segmentation_dataloaders(
+                    trained.dataset.dir_path,
+                    image_size=trained.input_size,
+                    batch_size=int(request.data.get("batch_size", 4)),
+                    val_split=float(request.data.get("val_split", 0.2)),
+                    num_workers=0,
+                )
+                entry = task_model_cache.get(trained)
+                device = resolve_device(request.data.get("device", "auto"))
+                model = entry["model"].to(device)
+                report = evaluate_segmentation(model, val_loader, device, class_names)
+            else:
+                entry = model_store.load(trained)
+                dataset = trained.dataset
+                _, val_loader, class_names = build_dataloaders(
+                    dataset.dir_path, image_size=trained.input_size, batch_size=32,
+                    val_split=request.data.get("val_split", 0.2), num_workers=0,
+                )
+                device = resolve_device("auto")
+                model = entry["model"].to(device)
+                report = evaluate_model(model, val_loader, device, class_names)
+        except (PredictorError, DetectionBackendError, ValueError) as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-
-        dataset = trained.dataset
-        _, val_loader, class_names = build_dataloaders(
-            dataset.dir_path, image_size=trained.input_size, batch_size=32,
-            val_split=request.data.get("val_split", 0.2), num_workers=0,
-        )
-        device = resolve_device("auto")
-        model = entry["model"].to(device)
-        report = evaluate_model(model, val_loader, device, class_names)
         trained.metrics = report
-        trained.accuracy = report["accuracy"]
-        trained.macro_f1 = report["macro_f1"]
+        trained.accuracy = report.get("accuracy", 0)
+        trained.macro_f1 = report.get("macro_f1", report.get("miou", report.get("map50_95", 0)))
         trained.save(update_fields=["metrics", "accuracy", "macro_f1", "updated_at"])
         return Response({"detail": "评估完成", "metrics": report,
                          "model": TrainedModelSerializer(trained).data})

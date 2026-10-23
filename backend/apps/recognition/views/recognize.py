@@ -35,6 +35,7 @@ def _save_record(*, group_id, upload, image_bytes, source, trained, result, user
         group_id=group_id,
         user=user,
         original_name=getattr(upload, "name", "") or "sample.png",
+        task_type="classification",
         source=source,
         architecture=result["architecture"],
         model_name=result.get("model_name", ""),

@@ -119,6 +119,37 @@ const recommendations = {
 
 const curveOption = computed(() => {
   const history = progress.value?.history || []
+  const taskType = activeRun.value?.task_type || progress.value?.task_type || form.task_type
+  if (taskType === 'detection') {
+    return {
+      tooltip: { trigger: 'axis' },
+      legend: { data: ['mAP50', 'mAP50-95'], bottom: 0, textStyle: { color: '#97a3c4', fontSize: 11 } },
+      grid: { left: 50, right: 30, top: 24, bottom: 56 },
+      xAxis: { type: 'category', data: history.map((item) => `E${item.epoch}`) },
+      yAxis: { type: 'value', name: 'mAP', min: 0, max: 1, axisLabel: { formatter: (v) => `${v * 100}%` } },
+      series: [
+        { name: 'mAP50', type: 'line', smooth: true, data: history.map((item) => item.map50), itemStyle: { color: '#36d1c4' } },
+        { name: 'mAP50-95', type: 'line', smooth: true, data: history.map((item) => item.map50_95), itemStyle: { color: '#ffb454' } }
+      ]
+    }
+  }
+  if (taskType === 'segmentation') {
+    return {
+      tooltip: { trigger: 'axis' },
+      legend: { data: ['验证损失', '像素准确率', 'mIoU'], bottom: 0, textStyle: { color: '#97a3c4', fontSize: 11 } },
+      grid: { left: 50, right: 50, top: 24, bottom: 56 },
+      xAxis: { type: 'category', data: history.map((item) => `E${item.epoch}`) },
+      yAxis: [
+        { type: 'value', name: 'Loss' },
+        { type: 'value', name: '指标', min: 0, max: 1, axisLabel: { formatter: (v) => `${v * 100}%` } }
+      ],
+      series: [
+        { name: '验证损失', type: 'line', smooth: true, data: history.map((item) => item.val_loss), itemStyle: { color: '#ff6b81' } },
+        { name: '像素准确率', type: 'line', smooth: true, yAxisIndex: 1, data: history.map((item) => item.val_accuracy), itemStyle: { color: '#36d1c4' } },
+        { name: 'mIoU', type: 'line', smooth: true, yAxisIndex: 1, data: history.map((item) => item.val_miou), itemStyle: { color: '#ffb454' } }
+      ]
+    }
+  }
   return {
     tooltip: { trigger: 'axis' },
     legend: { data: ['训练损失', '验证损失', '训练准确率', '验证准确率'], bottom: 0, textStyle: { color: '#97a3c4', fontSize: 11 } },
@@ -188,10 +219,10 @@ async function poll() {
         target.best_accuracy = data.best_accuracy
       }
       if (data.status === 'success' && activeRun.value?.status !== 'success') {
-        ElMessage.success(`训练完成，验证准确率 ${percent(data.best_accuracy, 2)}`)
+        ElMessage.success(`训练完成，验证指标 ${percent(data.best_accuracy, 2)}`)
         logAction({
           action: '训练完成',
-          detail: `${activeRun.value?.name || '训练任务'} · 验证准确率 ${percent(data.best_accuracy, 2)}`,
+          detail: `${activeRun.value?.name || '训练任务'} · 验证指标 ${percent(data.best_accuracy, 2)}`,
           module: '训练'
         })
         activeRun.value.status = 'success'
@@ -281,7 +312,7 @@ watch(() => form.architecture, (key) => {
   }
   const meta = store.architectureMap[key]
   if (meta && form.image_size < meta.min_input_size) {
-    form.image_size = Math.max(meta.default_input_size <= 224 ? 64 : 224, meta.min_input_size)
+    form.image_size = Math.max(meta.default_input_size || 64, meta.min_input_size || 16)
   }
 })
 
@@ -522,7 +553,7 @@ function rowClass({ row }) {
               <div>建议输入尺寸：{{ currentArchitecture.default_input_size }}px（最小
                 {{ currentArchitecture.min_input_size }}px）</div>
               <div v-if="currentArchitecture.trained_count">
-                已训练 {{ currentArchitecture.trained_count }} 次，最优准确率
+                已训练 {{ currentArchitecture.trained_count }} 次，最优验证指标
                 {{ percent(currentArchitecture.best_accuracy, 2) }}
               </div>
             </div>
@@ -594,7 +625,7 @@ function rowClass({ row }) {
                          :stroke-width="10" />
           </template>
         </el-table-column>
-        <el-table-column label="准确率" width="90">
+        <el-table-column label="验证指标" width="90">
           <template #default="{ row }">{{ percent(row.best_accuracy, 1) }}</template>
         </el-table-column>
         <el-table-column prop="created_at" label="创建时间" width="170" />

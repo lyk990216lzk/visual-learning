@@ -69,6 +69,7 @@ class TrainingRunViewSet(ModelViewSet):
             run.refresh_from_db()
         return Response({
             "id": run.id,
+            "task_type": run.task_type,
             "status": run.status,
             "status_display": run.get_status_display(),
             "running": running,

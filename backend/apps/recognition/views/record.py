@@ -35,6 +35,8 @@ class PredictionRecordViewSet(ModelViewSet):
             queryset = queryset.filter(user__username=params["username"])
         if params.get("architecture"):
             queryset = queryset.filter(architecture=params["architecture"])
+        if params.get("task_type"):
+            queryset = queryset.filter(task_type=params["task_type"])
         if params.get("label"):
             queryset = queryset.filter(predicted_label=params["label"])
         if params.get("source"):
@@ -72,6 +74,8 @@ class PredictionRecordViewSet(ModelViewSet):
         queryset = PredictionRecord.objects.all()
         if request.query_params.get("mine") in {"1", "true", "True"}:
             queryset = queryset.filter(user=request.user)
+        if request.query_params.get("task_type"):
+            queryset = queryset.filter(task_type=request.query_params["task_type"])
         days = int(request.query_params.get("days", 14))
         since = timezone.now() - timedelta(days=days)
 

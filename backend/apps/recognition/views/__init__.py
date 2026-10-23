@@ -9,6 +9,7 @@ from .recognize import BatchRecognizeView, CompareRecognizeView, RecognizeView, 
 from .record import PredictionRecordViewSet
 from .training import TrainingRunViewSet
 from .users import UserViewSet
+from .vision_tasks import DetectionPredictView, SegmentationPredictView
 
 __all__ = [
     "ArchitectureViewSet",
@@ -29,4 +30,6 @@ __all__ = [
     "DashboardStatsView",
     "SystemInfoView",
     "HealthView",
+    "DetectionPredictView",
+    "SegmentationPredictView",
 ]

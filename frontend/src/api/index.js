@@ -123,6 +123,8 @@ export const api = {
 
   // 识别
   recognize: (formData) => http.post('/recognize/', formData),
+  detect: (formData) => http.post('/detect/', formData),
+  segment: (formData) => http.post('/segment/', formData),
   recognizeCompare: (formData) => http.post('/recognize/compare/', formData),
   recognizeBatch: (formData) => http.post('/recognize/batch/', formData),
   // 内置样例图：该接口同样需要 Token 鉴权，<img src> 无法携带 Authorization 请求头，

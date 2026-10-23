@@ -574,6 +574,74 @@ class SqueezeNet(nn.Module):
 
 
 # --------------------------------------------------------------------------------------
+# 语义分割网络
+# --------------------------------------------------------------------------------------
+class DoubleConv(nn.Module):
+    """U-Net 使用的基础双层卷积块。"""
+
+    def __init__(self, in_channels: int, out_channels: int):
+        super().__init__()
+        self.block = nn.Sequential(
+            conv_bn_relu(in_channels, out_channels),
+            conv_bn_relu(out_channels, out_channels),
+        )
+
+    def forward(self, x):
+        return self.block(x)
+
+
+class UNet(nn.Module):
+    """轻量 U-Net：编码器逐级下采样，解码器通过跳层连接恢复细粒度边界。"""
+
+    def __init__(self, num_classes: int = 2, in_channels: int = 3, base_channels: int = 32):
+        super().__init__()
+        base = base_channels
+        self.enc1 = DoubleConv(in_channels, base)
+        self.enc2 = DoubleConv(base, base * 2)
+        self.enc3 = DoubleConv(base * 2, base * 4)
+        self.enc4 = DoubleConv(base * 4, base * 8)
+        self.pool = nn.MaxPool2d(2)
+        self.bottleneck = DoubleConv(base * 8, base * 16)
+        self.up4 = nn.ConvTranspose2d(base * 16, base * 8, 2, 2)
+        self.dec4 = DoubleConv(base * 16, base * 8)
+        self.up3 = nn.ConvTranspose2d(base * 8, base * 4, 2, 2)
+        self.dec3 = DoubleConv(base * 8, base * 4)
+        self.up2 = nn.ConvTranspose2d(base * 4, base * 2, 2, 2)
+        self.dec2 = DoubleConv(base * 4, base * 2)
+        self.up1 = nn.ConvTranspose2d(base * 2, base, 2, 2)
+        self.dec1 = DoubleConv(base * 2, base)
+        self.head = nn.Conv2d(base, num_classes, kernel_size=1)
+
+    def forward(self, x):
+        enc1 = self.enc1(x)
+        enc2 = self.enc2(self.pool(enc1))
+        enc3 = self.enc3(self.pool(enc2))
+        enc4 = self.enc4(self.pool(enc3))
+        bottleneck = self.bottleneck(self.pool(enc4))
+        dec4 = self.dec4(torch.cat([self.up4(bottleneck), enc4], dim=1))
+        dec3 = self.dec3(torch.cat([self.up3(dec4), enc3], dim=1))
+        dec2 = self.dec2(torch.cat([self.up2(dec3), enc2], dim=1))
+        dec1 = self.dec1(torch.cat([self.up1(dec2), enc1], dim=1))
+        return self.head(dec1)
+
+
+def build_fcn(num_classes: int = 2) -> nn.Module:
+    """torchvision FCN-ResNet50，不加载任何在线预训练权重。"""
+    from torchvision.models.segmentation import fcn_resnet50
+
+    return fcn_resnet50(weights=None, weights_backbone=None, num_classes=num_classes,
+                        aux_loss=False)
+
+
+def build_deeplabv3(num_classes: int = 2) -> nn.Module:
+    """torchvision DeepLabV3-ResNet50，不加载任何在线预训练权重。"""
+    from torchvision.models.segmentation import deeplabv3_resnet50
+
+    return deeplabv3_resnet50(weights=None, weights_backbone=None, num_classes=num_classes,
+                              aux_loss=False)
+
+
+# --------------------------------------------------------------------------------------
 # 统一构建入口
 # --------------------------------------------------------------------------------------
 BUILDERS = {
@@ -590,6 +658,9 @@ BUILDERS = {
     "densenet121": lambda num_classes, in_channels, **kw: DenseNet((6, 12, 24, 16), 32, num_classes, in_channels),
     "mobilenetv2": lambda num_classes, in_channels, **kw: MobileNetV2(num_classes, in_channels),
     "squeezenet": lambda num_classes, in_channels, **kw: SqueezeNet(num_classes, in_channels),
+    "fcn": lambda num_classes, in_channels, **kw: build_fcn(num_classes),
+    "unet": lambda num_classes, in_channels, **kw: UNet(num_classes, in_channels),
+    "deeplabv3": lambda num_classes, in_channels, **kw: build_deeplabv3(num_classes),
 }
 
 

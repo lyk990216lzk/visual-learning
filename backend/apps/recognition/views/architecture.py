@@ -46,15 +46,21 @@ class ArchitectureViewSet(ViewSet):
         num_classes = request.query_params.get("num_classes")
         input_size = request.query_params.get("input_size")
         summary = None
-        if meta.get("implemented"):
+        if meta.get("implemented") and meta.get("task") == "classification":
             summary = architecture_summary(meta["key"],
                                            num_classes=int(num_classes) if num_classes else 10,
                                            input_size=int(input_size) if input_size else None)
         return Response({
             **meta,
             "summary": summary,
-            "integration_note": None if meta.get("implemented") else
-                                "该模型已加入统一模型目录，训练与推理后端尚待接入。",
+            "integration_note": (
+                "检测模型由 Ultralytics YOLO 后端加载，参数量以训练权重为准。"
+                if meta.get("task") == "detection"
+                else "分割模型参数与指标在训练完成后显示。"
+                if meta.get("task") == "segmentation"
+                else None if meta.get("implemented")
+                else "该模型已加入统一模型目录，训练与推理后端尚待接入。"
+            ),
             "trained_models": list(models.values("id", "name", "accuracy", "num_classes",
                                                  "is_active", "created_at")),
         })
@@ -68,6 +74,11 @@ class ArchitectureViewSet(ViewSet):
         if not meta.get("implemented"):
             return Response(
                 {"detail": "该模型尚未接入训练与推理后端，暂时无法统计结构参数。"},
+                status=409,
+            )
+        if meta.get("task") in {"detection", "segmentation"}:
+            return Response(
+                {"detail": "该模型的参数以训练产出的权重文件为准，暂不执行结构探针。"},
                 status=409,
             )
         num_classes = int(request.query_params.get("num_classes", 10))

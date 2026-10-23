@@ -126,6 +126,13 @@ class TrainingManager:
             device = resolve_device(run.device)
             _log_line(run, f"使用计算设备：{device}")
 
+            if run.task_type == TrainingRun.TaskType.DETECTION:
+                self._run_detection(run, stop_event)
+                return
+            if run.task_type == TrainingRun.TaskType.SEGMENTATION:
+                self._run_segmentation(run, stop_event, device)
+                return
+
             train_loader, val_loader, class_names = build_dataloaders(
                 dataset_dir,
                 image_size=run.image_size,
@@ -269,6 +276,241 @@ class TrainingManager:
                 torch.set_num_threads(previous_threads)
             connections.close_all()
             self._cleanup(run_id)
+
+    def _run_detection(self, run, stop_event: threading.Event) -> None:
+        """运行 YOLO 训练并把开始、进度、指标和权重写回统一训练记录。"""
+        import shutil
+
+        from apps.recognition.models import TrainedModel, TrainingRun
+
+        from .detection import train_yolo_model
+
+        work_dir = run.dataset.weights_dir / f"_run_{run.id}"
+        _log_line(run, f"目标检测训练后端：YOLO / {run.architecture}")
+
+        def on_batch(payload: Dict) -> None:
+            TrainingRun.objects.filter(pk=run.id).update(
+                progress=payload["progress"],
+                current_epoch=payload["epoch"],
+                latest_metrics=payload,
+            )
+
+        def on_epoch(payload: Dict) -> None:
+            TrainingRun.objects.filter(pk=run.id).update(
+                progress=payload["progress"],
+                current_epoch=payload["record"]["epoch"],
+                history=payload["history"],
+                best_accuracy=payload["best_accuracy"],
+                latest_metrics=payload["record"],
+            )
+
+        def log(message: str) -> None:
+            current = TrainingRun.objects.get(pk=run.id)
+            _log_line(current, message)
+            current.save(update_fields=["log"])
+
+        result = train_yolo_model(
+            run.architecture,
+            run.dataset.dir_path,
+            work_dir,
+            {
+                "epochs": run.epochs,
+                "batch_size": run.batch_size,
+                "learning_rate": run.learning_rate,
+                "weight_decay": run.weight_decay,
+                "optimizer": run.optimizer,
+                "label_smoothing": run.label_smoothing,
+                "image_size": run.image_size,
+                "num_workers": run.num_workers,
+                "val_split": run.val_split,
+                "seed": run.seed,
+                "device": run.device,
+                "augment": run.augment,
+            },
+            on_epoch=on_epoch,
+            on_batch=on_batch,
+            should_stop=stop_event.is_set,
+            log=log,
+        )
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        weights_dir = run.dataset.weights_dir
+        weights_dir.mkdir(parents=True, exist_ok=True)
+        file_path = weights_dir / f"{run.architecture}_{run.dataset_id}_{timestamp}.pt"
+        shutil.copy2(result["best_path"], file_path)
+        report = result["report"]
+        trained = TrainedModel.objects.create(
+            name=f"{run.architecture}@{run.dataset.name}"[:80],
+            task_type=TrainingRun.TaskType.DETECTION,
+            architecture=run.architecture,
+            dataset=run.dataset,
+            training_run=run,
+            classes=result["classes"],
+            num_classes=len(result["classes"]),
+            input_size=run.image_size,
+            accuracy=report["accuracy"],
+            macro_f1=report["map50_95"],
+            metrics=report,
+            params_million=report["params_million"],
+            file_path=str(file_path),
+            file_size=file_path.stat().st_size,
+            notes=f"YOLO 训练任务 #{run.id}",
+        )
+        current_active = TrainedModel.objects.filter(
+            architecture=run.architecture, task_type=TrainingRun.TaskType.DETECTION,
+            is_active=True).exclude(pk=trained.pk).first()
+        if current_active is None or trained.accuracy >= current_active.accuracy:
+            trained.is_active = True
+            trained.save(update_fields=["is_active", "updated_at"])
+
+        run.refresh_from_db()
+        run.status = (
+            TrainingRun.Status.CANCELED
+            if report.get("stopped_early") else TrainingRun.Status.SUCCESS
+        )
+        run.progress = 100
+        run.history = result["history"]
+        run.metrics = report
+        run.best_accuracy = report["best_accuracy"]
+        run.finished_at = timezone.now()
+        run.trained_model = trained
+        run.duration_seconds = report["duration_seconds"]
+        _log_line(run, f"检测权重已保存：{file_path.name}，mAP50={report['map50']:.4f}")
+        run.save(update_fields=[
+            "status", "progress", "history", "metrics", "best_accuracy", "finished_at",
+            "trained_model", "duration_seconds",
+        ])
+
+    def _run_segmentation(self, run, stop_event: threading.Event, device) -> None:
+        """运行语义分割训练，保存 PyTorch state_dict 和 mIoU 指标。"""
+        from apps.recognition.models import TrainedModel, TrainingRun
+
+        from .segmentation import build_segmentation_dataloaders, train_segmentation_model
+
+        train_loader, val_loader, class_names, split_info = build_segmentation_dataloaders(
+            run.dataset.dir_path,
+            image_size=run.image_size,
+            batch_size=run.batch_size,
+            val_split=run.val_split,
+            num_workers=run.num_workers,
+            seed=run.seed,
+            augment=run.augment,
+        )
+        run.num_classes = len(class_names)
+        run.class_names = class_names
+        _log_line(
+            run,
+            f"分割数据准备完成：{split_info['split_mode']}，训练 {split_info['train_count']}，"
+            f"验证 {split_info['val_count']}，类别 {class_names}",
+        )
+        run.save(update_fields=["num_classes", "class_names", "log"])
+        model = zoo.build_model(run.architecture, num_classes=len(class_names))
+        params = zoo.count_parameters(model, trainable_only=False)
+        cfg = TrainConfig(
+            epochs=run.epochs,
+            batch_size=run.batch_size,
+            lr=run.learning_rate,
+            weight_decay=run.weight_decay,
+            optimizer=run.optimizer,
+            scheduler=run.scheduler,
+            image_size=run.image_size,
+            num_workers=run.num_workers,
+            val_split=run.val_split,
+            label_smoothing=run.label_smoothing,
+            seed=run.seed,
+            device=run.device,
+            augment=run.augment,
+            max_batches_per_epoch=run.max_batches_per_epoch,
+            class_weighted_loss=False,
+        )
+
+        def on_batch(payload: Dict) -> None:
+            TrainingRun.objects.filter(pk=run.id).update(
+                progress=payload["progress"],
+                current_epoch=payload["epoch"],
+                latest_metrics=payload,
+            )
+
+        def on_epoch(payload: Dict) -> None:
+            TrainingRun.objects.filter(pk=run.id).update(
+                progress=payload["progress"],
+                current_epoch=payload["record"]["epoch"],
+                history=payload["history"],
+                best_accuracy=payload["best_accuracy"],
+                latest_metrics=payload["record"],
+            )
+
+        def log(message: str) -> None:
+            current = TrainingRun.objects.get(pk=run.id)
+            _log_line(current, message)
+            current.save(update_fields=["log"])
+
+        result = train_segmentation_model(
+            model,
+            train_loader,
+            val_loader,
+            class_names,
+            cfg,
+            on_epoch=on_epoch,
+            on_batch=on_batch,
+            should_stop=stop_event.is_set,
+            log=log,
+        )
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        weights_dir = run.dataset.weights_dir
+        weights_dir.mkdir(parents=True, exist_ok=True)
+        file_path = weights_dir / f"{run.architecture}_{run.dataset_id}_{timestamp}.pt"
+        report = result["report"]
+        torch.save({
+            "task_type": TrainingRun.TaskType.SEGMENTATION,
+            "state_dict": result["state_dict"],
+            "architecture": run.architecture,
+            "classes": class_names,
+            "image_size": run.image_size,
+            "history": result["history"],
+            "metrics": report,
+            "config": cfg.to_dict(),
+        }, file_path)
+        trained = TrainedModel.objects.create(
+            name=f"{run.architecture}@{run.dataset.name}"[:80],
+            task_type=TrainingRun.TaskType.SEGMENTATION,
+            architecture=run.architecture,
+            dataset=run.dataset,
+            training_run=run,
+            classes=class_names,
+            num_classes=len(class_names),
+            input_size=run.image_size,
+            accuracy=report["accuracy"],
+            macro_f1=report["miou"],
+            metrics=report,
+            params_million=round(params / 1e6, 3),
+            file_path=str(file_path),
+            file_size=file_path.stat().st_size,
+            notes=f"语义分割训练任务 #{run.id}",
+        )
+        current_active = TrainedModel.objects.filter(
+            architecture=run.architecture, task_type=TrainingRun.TaskType.SEGMENTATION,
+            is_active=True).exclude(pk=trained.pk).first()
+        if current_active is None or trained.accuracy >= current_active.accuracy:
+            trained.is_active = True
+            trained.save(update_fields=["is_active", "updated_at"])
+
+        run.refresh_from_db()
+        run.status = (
+            TrainingRun.Status.CANCELED
+            if report.get("stopped_early") else TrainingRun.Status.SUCCESS
+        )
+        run.progress = 100
+        run.history = result["history"]
+        run.metrics = report
+        run.best_accuracy = report["best_miou"]
+        run.finished_at = timezone.now()
+        run.trained_model = trained
+        run.duration_seconds = report["duration_seconds"]
+        _log_line(run, f"分割权重已保存：{file_path.name}，mIoU={report['miou']:.4f}")
+        run.save(update_fields=[
+            "status", "progress", "history", "metrics", "best_accuracy", "finished_at",
+            "trained_model", "duration_seconds",
+        ])
 
     def _cleanup(self, run_id: int) -> None:
         with self._lock:

@@ -155,6 +155,8 @@ class TrainedModel(models.Model):
 
     name = models.CharField("模型名称", max_length=120)
     architecture = models.CharField("网络结构", max_length=40)
+    task_type = models.CharField("功能", max_length=20, choices=TrainingRun.TaskType.choices,
+                                 default=TrainingRun.TaskType.CLASSIFICATION)
     dataset = models.ForeignKey(Dataset, on_delete=models.SET_NULL, null=True, blank=True,
                                 related_name="trained_models", verbose_name="训练数据集")
     training_run = models.ForeignKey(TrainingRun, on_delete=models.SET_NULL, null=True, blank=True,
@@ -187,7 +189,8 @@ class TrainedModel(models.Model):
         super().save(*args, **kwargs)
         # 同一种网络结构只保留一个「激活」模型，作为该结构的默认推理模型
         if self.is_active:
-            TrainedModel.objects.filter(architecture=self.architecture, is_active=True) \
+            TrainedModel.objects.filter(architecture=self.architecture,
+                                        task_type=self.task_type, is_active=True) \
                 .exclude(pk=self.pk).update(is_active=False)
 
     @property
@@ -197,8 +200,10 @@ class TrainedModel(models.Model):
 
     def delete(self, *args, **kwargs):
         from ml.predictor import model_store
+        from ml.task_predictor import task_model_cache
 
         model_store.invalidate(self.pk)
+        task_model_cache.invalidate(self.pk)
         path = self.resolved_path
         result = super().delete(*args, **kwargs)
         try:
@@ -223,14 +228,17 @@ class PredictionRecord(models.Model):
                              related_name="prediction_records", verbose_name="操作用户")
     image = models.FileField("图片", upload_to="uploads/%Y%m%d/", blank=True, null=True)
     original_name = models.CharField("原始文件名", max_length=255, blank=True, default="")
+    task_type = models.CharField("功能", max_length=20, choices=TrainingRun.TaskType.choices,
+                                 default=TrainingRun.TaskType.CLASSIFICATION)
     source = models.CharField("来源", max_length=20, choices=Source.choices, default=Source.UPLOAD)
     architecture = models.CharField("网络结构", max_length=40, blank=True, default="")
-    model_name = models.CharField("模型名", max_length=120, blank=True, default="")
+    model_name = models.CharField("模型名称", max_length=120, blank=True, default="")
     trained_model = models.ForeignKey(TrainedModel, on_delete=models.SET_NULL, null=True, blank=True,
                                       related_name="records", verbose_name="模型")
     predicted_label = models.CharField("预测类别", max_length=120, blank=True, default="")
     confidence = models.FloatField("置信度", default=0.0)
     topk = models.JSONField("Top-K 结果", default=list, blank=True)
+    result_data = models.JSONField("结构化结果", default=dict, blank=True)
     latency_ms = models.FloatField("推理耗时(ms)", default=0.0)
     created_at = models.DateTimeField("识别时间", auto_now_add=True, db_index=True)
 

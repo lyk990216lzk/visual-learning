@@ -28,7 +28,10 @@ const batchLoading = ref(false)
 const batchResult = ref(null)
 const history = ref([])
 
-const readyArchitectures = computed(() => store.architectures.filter((item) => item.ready))
+const readyArchitectures = computed(() =>
+  store.architectures.filter((item) => item.ready
+    && (item.task || 'classification') === 'classification')
+)
 
 const currentArchitecture = computed(
   () => store.architectureMap[architecture.value] || null

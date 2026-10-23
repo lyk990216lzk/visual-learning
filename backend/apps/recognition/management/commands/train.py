@@ -16,6 +16,8 @@ class Command(BaseCommand):
     help = "创建并执行一个训练任务（前台阻塞，实时打印进度）"
 
     def add_arguments(self, parser):
+        parser.add_argument("--task", default="classification",
+                            choices=["classification", "detection", "segmentation"])
         parser.add_argument("--architecture", "-a", required=True,
                             choices=implemented_architecture_keys())
         parser.add_argument("--dataset", "-d", required=True, help="数据集名称或 id")
@@ -42,6 +44,7 @@ class Command(BaseCommand):
 
         payload = {
             "name": options["name"] or f"{options['architecture']}@{dataset.name}",
+            "task_type": options["task"],
             "architecture": options["architecture"],
             "dataset": dataset.id,
             "epochs": options["epochs"],

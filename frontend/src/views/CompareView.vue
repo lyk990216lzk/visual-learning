@@ -19,7 +19,10 @@ const samples = SAMPLE_LABELS
 const sampleUrls = ref({})
 const palette = ['#4f8cff', '#36d1c4', '#ffb454', '#ff6b81', '#9b7bff', '#3ad47a', '#ff9f43']
 
-const readyArchitectures = computed(() => store.architectures.filter((item) => item.ready))
+const readyArchitectures = computed(() =>
+  store.architectures.filter((item) => item.ready
+    && (item.task || 'classification') === 'classification')
+)
 
 const compareOption = computed(() => {
   const results = result.value?.results || []

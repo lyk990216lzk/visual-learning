@@ -128,7 +128,7 @@ class TrainingRunCreateSerializer(serializers.ModelSerializer):
             })
         if dataset.image_count < 4:
             raise serializers.ValidationError({"dataset": "数据集样本过少（至少 4 张图片）"})
-        if len(dataset.class_names or []) < 2:
+        if task_type == TrainingRun.TaskType.CLASSIFICATION and len(dataset.class_names or []) < 2:
             raise serializers.ValidationError({"dataset": "数据集至少需要 2 个类别"})
         if attrs["image_size"] < meta["min_input_size"]:
             raise serializers.ValidationError(
@@ -146,10 +146,11 @@ class TrainedModelSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = TrainedModel
-        fields = ["id", "name", "architecture", "architecture_name", "dataset", "dataset_name",
-                  "training_run", "classes", "num_classes", "input_size", "accuracy", "macro_f1",
-                  "metrics", "params_million", "file_path", "file_size", "file_size_kb", "file_name",
-                  "is_active", "notes", "created_at", "updated_at"]
+        fields = ["id", "name", "task_type", "architecture", "architecture_name", "dataset",
+                  "dataset_name", "training_run", "classes", "num_classes", "input_size",
+                  "accuracy", "macro_f1", "metrics", "params_million", "file_path",
+                  "file_size", "file_size_kb", "file_name", "is_active", "notes",
+                  "created_at", "updated_at"]
         read_only_fields = ["file_path", "updated_at"]
 
     def get_architecture_name(self, obj):
@@ -171,9 +172,10 @@ class PredictionRecordSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = PredictionRecord
-        fields = ["id", "group_id", "user", "username", "image_url", "original_name", "source",
-                  "architecture", "model_name", "trained_model", "predicted_label", "confidence",
-                  "topk", "latency_ms", "created_at"]
+        fields = ["id", "group_id", "user", "username", "image_url", "original_name",
+                  "task_type", "source", "architecture", "model_name", "trained_model",
+                  "predicted_label", "confidence", "topk", "result_data", "latency_ms",
+                  "created_at"]
 
     def get_username(self, obj):
         return obj.user.username if obj.user_id else "—"
