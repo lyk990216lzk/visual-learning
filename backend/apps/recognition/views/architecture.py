@@ -45,12 +45,16 @@ class ArchitectureViewSet(ViewSet):
         models = TrainedModel.objects.filter(architecture=meta["key"])
         num_classes = request.query_params.get("num_classes")
         input_size = request.query_params.get("input_size")
-        summary = architecture_summary(meta["key"],
-                                       num_classes=int(num_classes) if num_classes else 10,
-                                       input_size=int(input_size) if input_size else None)
+        summary = None
+        if meta.get("implemented"):
+            summary = architecture_summary(meta["key"],
+                                           num_classes=int(num_classes) if num_classes else 10,
+                                           input_size=int(input_size) if input_size else None)
         return Response({
             **meta,
             "summary": summary,
+            "integration_note": None if meta.get("implemented") else
+                                "该模型已加入统一模型目录，训练与推理后端尚待接入。",
             "trained_models": list(models.values("id", "name", "accuracy", "num_classes",
                                                  "is_active", "created_at")),
         })
@@ -61,6 +65,11 @@ class ArchitectureViewSet(ViewSet):
         meta = get_architecture(pk)
         if meta is None:
             return Response({"detail": f"未知的模型：{pk}"}, status=404)
+        if not meta.get("implemented"):
+            return Response(
+                {"detail": "该模型尚未接入训练与推理后端，暂时无法统计结构参数。"},
+                status=409,
+            )
         num_classes = int(request.query_params.get("num_classes", 10))
         input_size = int(request.query_params.get("input_size", meta["default_input_size"]))
         return Response(architecture_summary(meta["key"], num_classes, input_size))

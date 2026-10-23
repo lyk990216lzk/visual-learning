@@ -11,6 +11,7 @@ import { logAction } from '../utils/operationLog'
 const store = useAppStore()
 const auth = useAuthStore()
 const tab = ref('architectures')
+const taskFilter = ref('all')
 const archDrawer = ref(false)
 const detail = ref(null)
 const detailLoading = ref(false)
@@ -18,6 +19,56 @@ const modelDrawer = ref(false)
 const activeModel = ref(null)
 
 const models = computed(() => store.trainedModels)
+
+const TASK_ORDER = ['classification', 'detection', 'segmentation']
+const TASK_META = {
+  classification: {
+    label: '图片识别',
+    description: '判断整张图片所属类别，输出 Top-K 概率',
+    tagType: 'success'
+  },
+  detection: {
+    label: '目标检测',
+    description: '定位目标位置，输出类别、置信度与边界框',
+    tagType: 'warning'
+  },
+  segmentation: {
+    label: '语义分割',
+    description: '为每个像素分配类别，生成彩色分割掩码',
+    tagType: 'info'
+  }
+}
+
+function architectureTask(item) {
+  return TASK_META[item.task] ? item.task : 'classification'
+}
+
+const taskCounts = computed(() => TASK_ORDER.reduce((counts, task) => {
+  counts[task] = store.architectures.filter((item) => architectureTask(item) === task).length
+  return counts
+}, {}))
+
+const taskFilterOptions = computed(() => [
+  { value: 'all', label: '全部', count: store.architectures.length },
+  ...TASK_ORDER.map((task) => ({
+    value: task,
+    label: TASK_META[task].label,
+    count: taskCounts.value[task] || 0
+  }))
+])
+
+const architectureGroups = computed(() => TASK_ORDER
+  .filter((task) => taskFilter.value === 'all' || taskFilter.value === task)
+  .map((task) => ({
+    task,
+    ...TASK_META[task],
+    items: store.architectures.filter((item) => architectureTask(item) === task)
+  }))
+  .filter((group) => group.items.length)
+)
+
+const visibleArchitectureCount = computed(() => architectureGroups.value
+  .reduce((total, group) => total + group.items.length, 0))
 
 const scatterOption = computed(() => {
   const rows = models.value.filter((item) => item.params_million)
@@ -149,6 +200,10 @@ async function openArchitecture(item) {
   archDrawer.value = true
   detailLoading.value = true
   detail.value = { ...item, summary: null, trained_models: [] }
+  if (item.implemented === false) {
+    detailLoading.value = false
+    return
+  }
   try {
     const numClasses = item.num_classes || 6
     const data = await api.architectureDetail(item.key, {
@@ -220,30 +275,73 @@ onMounted(async () => {
 
     <div v-if="tab === 'architectures'">
       <div class="dim" style="font-size: 13px; margin-bottom: 12px">
-        系统内置 {{ store.architectures.length }} 种经典卷积网络结构，全部为从零实现，无需下载预训练权重，可离线训练与推理。
+        系统收录 {{ store.architectures.length }} 个视觉模型：图片识别 {{ taskCounts.classification }} 个、
+        目标检测 {{ taskCounts.detection }} 个、语义分割 {{ taskCounts.segmentation }} 个。
       </div>
-      <div class="grid grid-3">
-        <div
-          v-for="item in store.architectures"
-          :key="item.key"
-          class="glass arch-card"
-          :class="{ ready: item.ready }"
-          @click="openArchitecture(item)"
-        >
-          <div class="arch-head">
-            <div class="arch-name">{{ item.name }}</div>
-            <div class="arch-year">{{ item.year }}</div>
+
+      <div class="arch-filter-bar">
+        <span class="arch-filter-label">功能</span>
+        <el-radio-group v-model="taskFilter" size="small">
+          <el-radio-button
+            v-for="option in taskFilterOptions"
+            :key="option.value"
+            :label="option.value"
+          >
+            {{ option.label }} {{ option.count }}
+          </el-radio-button>
+        </el-radio-group>
+        <span class="arch-filter-summary">当前展示 {{ visibleArchitectureCount }} 个模型</span>
+      </div>
+
+      <div class="arch-groups">
+        <section v-for="group in architectureGroups" :key="group.task" class="arch-group">
+          <div class="arch-group-head">
+            <span class="arch-task-dot" :class="`is-${group.task}`"></span>
+            <div>
+              <div class="arch-group-title">
+                {{ group.label }}
+                <span class="arch-group-count">{{ group.items.length }}</span>
+              </div>
+              <div class="dim arch-group-desc">{{ group.description }}</div>
+            </div>
           </div>
-          <div class="dim" style="font-size: 12px; margin-top: 4px">{{ item.family }}</div>
-          <div class="tag-row">
-            <el-tag v-for="tag in item.highlights" :key="tag" size="small" effect="plain">{{ tag }}</el-tag>
+
+          <div class="grid grid-3">
+            <div
+              v-for="item in group.items"
+              :key="item.key"
+              class="glass arch-card"
+              :class="{ ready: item.ready, 'catalog-only': item.implemented === false }"
+              @click="openArchitecture(item)"
+            >
+              <div class="arch-head">
+                <div class="arch-name">{{ item.name }}</div>
+                <div class="arch-year">{{ item.year }}</div>
+              </div>
+              <div class="arch-card-meta">
+                <span class="dim">{{ item.family }}</span>
+                <el-tag size="small" effect="plain" :type="group.tagType">{{ group.label }}</el-tag>
+              </div>
+              <div class="tag-row">
+                <el-tag v-for="tag in item.highlights" :key="tag" size="small" effect="plain">{{ tag }}</el-tag>
+              </div>
+              <div class="metrics-line">
+                <template v-if="item.implemented === false">
+                  <span>模型目录 · 待接入</span>
+                  <span>暂不可训练</span>
+                </template>
+                <template v-else-if="item.ready">
+                  <span>已训练 {{ item.trained_count }} 次</span>
+                  <span>最优 {{ percent(item.best_accuracy, 1) }}</span>
+                </template>
+                <template v-else>
+                  <span>尚未训练</span>
+                  <span>可离线训练</span>
+                </template>
+              </div>
+            </div>
           </div>
-          <div class="metrics-line">
-            <span v-if="item.ready">已训练 {{ item.trained_count }} 次</span>
-            <span v-else>尚未训练</span>
-            <span v-if="item.ready">最优 {{ percent(item.best_accuracy, 1) }}</span>
-          </div>
-        </div>
+        </section>
       </div>
     </div>
 
@@ -353,15 +451,26 @@ onMounted(async () => {
             {{ tag }}
           </el-tag>
         </div>
-        <el-divider content-position="left">结构统计（按 {{ detail?.num_classes || 6 }} 类计算）</el-divider>
-        <el-descriptions v-if="detail?.summary" :column="2" border size="small">
-          <el-descriptions-item label="总参数量">{{ detail.summary.total_params?.toLocaleString() }}</el-descriptions-item>
-          <el-descriptions-item label="参数量">{{ fixed(detail.summary.params_million, 3) }} M</el-descriptions-item>
-          <el-descriptions-item label="模型体积">{{ fixed(detail.summary.size_mb, 2) }} MB</el-descriptions-item>
-          <el-descriptions-item label="CPU 推理耗时">{{ fixed(detail.summary.latency_ms, 2) }} ms</el-descriptions-item>
-          <el-descriptions-item label="层数">{{ detail.summary.layers }}</el-descriptions-item>
-          <el-descriptions-item label="论文">{{ detail?.paper }}</el-descriptions-item>
-        </el-descriptions>
+        <el-alert
+          v-if="detail?.implemented === false"
+          type="warning"
+          :closable="false"
+          show-icon
+          title="模型目录信息"
+          description="该模型已经加入功能分类，但训练与推理后端尚未接入。当前可查看模型介绍，暂不能发起训练。"
+          style="margin-top: 14px"
+        />
+        <template v-else>
+          <el-divider content-position="left">结构统计（按 {{ detail?.num_classes || 6 }} 类计算）</el-divider>
+          <el-descriptions v-if="detail?.summary" :column="2" border size="small">
+            <el-descriptions-item label="总参数量">{{ detail.summary.total_params?.toLocaleString() }}</el-descriptions-item>
+            <el-descriptions-item label="参数量">{{ fixed(detail.summary.params_million, 3) }} M</el-descriptions-item>
+            <el-descriptions-item label="模型体积">{{ fixed(detail.summary.size_mb, 2) }} MB</el-descriptions-item>
+            <el-descriptions-item label="CPU 推理耗时">{{ fixed(detail.summary.latency_ms, 2) }} ms</el-descriptions-item>
+            <el-descriptions-item label="层数">{{ detail.summary.layers }}</el-descriptions-item>
+            <el-descriptions-item label="论文">{{ detail?.paper }}</el-descriptions-item>
+          </el-descriptions>
+        </template>
         <el-divider content-position="left">该结构已训练模型</el-divider>
         <el-table :data="detail?.trained_models || []" size="small">
           <el-table-column prop="name" label="名称" min-width="150" show-overflow-tooltip />
@@ -419,3 +528,109 @@ onMounted(async () => {
     </el-drawer>
   </div>
 </template>
+
+<style scoped>
+.arch-filter-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 10px 12px;
+  margin-bottom: 16px;
+  border: 1px solid var(--ir-border);
+  border-radius: 10px;
+  background: rgba(17, 27, 47, 0.92);
+}
+
+.arch-filter-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ir-text);
+}
+
+.arch-filter-summary {
+  margin-left: auto;
+  color: var(--ir-text-dim);
+  font-size: 12px;
+}
+
+.arch-groups {
+  display: grid;
+  gap: 20px;
+}
+
+.arch-group + .arch-group {
+  padding-top: 18px;
+  border-top: 1px solid var(--ir-border);
+}
+
+.arch-group-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-bottom: 10px;
+}
+
+.arch-group-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.arch-group-count {
+  min-width: 22px;
+  padding: 1px 7px;
+  border: 1px solid var(--ir-border);
+  border-radius: 999px;
+  color: var(--ir-text-dim);
+  font-size: 11px;
+  font-weight: 400;
+  text-align: center;
+}
+
+.arch-group-desc {
+  margin-top: 2px;
+  font-size: 12px;
+}
+
+.arch-task-dot {
+  width: 8px;
+  height: 8px;
+  margin-top: 7px;
+  border-radius: 50%;
+  background: var(--ir-primary);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--ir-primary) 65%, transparent);
+}
+
+.arch-task-dot.is-detection {
+  background: var(--ir-warn);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--ir-warn) 65%, transparent);
+}
+
+.arch-task-dot.is-segmentation {
+  background: #a98bff;
+  box-shadow: 0 0 10px rgba(169, 139, 255, 0.65);
+}
+
+.arch-card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 5px;
+  font-size: 12px;
+}
+
+.arch-card.catalog-only {
+  background: rgba(17, 27, 47, 0.72);
+}
+
+@media (max-width: 720px) {
+  .arch-filter-summary {
+    width: 100%;
+    margin-left: 0;
+  }
+}
+</style>

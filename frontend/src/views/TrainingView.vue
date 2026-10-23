@@ -45,6 +45,9 @@ const rules = {
   dataset: [{ required: true, message: '请选择数据集', trigger: 'change' }]
 }
 
+const trainableArchitectures = computed(() =>
+  store.architectures.filter((item) => item.implemented !== false)
+)
 const currentArchitecture = computed(() => store.architectureMap[form.architecture])
 const currentDataset = computed(() => store.datasets.find((item) => item.id === form.dataset))
 
@@ -328,7 +331,7 @@ function rowClass({ row }) {
           <el-form-item label="网络结构" prop="architecture">
             <el-select v-model="form.architecture" style="width: 100%">
               <el-option
-                v-for="item in store.architectures"
+                v-for="item in trainableArchitectures"
                 :key="item.key"
                 :value="item.key"
                 :label="`${item.name}（${item.year} · ${item.family}）`"
