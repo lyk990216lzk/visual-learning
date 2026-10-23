@@ -81,6 +81,11 @@ class Dataset(models.Model):
 class TrainingRun(models.Model):
     """一次训练任务：超参数 + 实时进度 + 历史曲线 + 日志。"""
 
+    class TaskType(models.TextChoices):
+        CLASSIFICATION = "classification", "图片识别"
+        DETECTION = "detection", "目标检测"
+        SEGMENTATION = "segmentation", "语义分割"
+
     class Status(models.TextChoices):
         PENDING = "pending", "排队中"
         RUNNING = "running", "训练中"
@@ -89,6 +94,8 @@ class TrainingRun(models.Model):
         CANCELED = "canceled", "已中止"
 
     name = models.CharField("任务名称", max_length=120)
+    task_type = models.CharField("功能", max_length=20, choices=TaskType.choices,
+                                 default=TaskType.CLASSIFICATION)
     architecture = models.CharField("网络结构", max_length=40)
     dataset = models.ForeignKey(Dataset, on_delete=models.CASCADE, related_name="training_runs",
                                 verbose_name="数据集")

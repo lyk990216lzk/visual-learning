@@ -23,6 +23,7 @@ let timer = null
 
 const form = reactive({
   name: '',
+  task_type: 'classification',
   architecture: 'lenet5',
   dataset: null,
   epochs: 10,
@@ -41,18 +42,35 @@ const form = reactive({
 })
 
 const rules = {
+  task_type: [{ required: true, message: '请选择训练功能', trigger: 'change' }],
   architecture: [{ required: true, message: '请选择网络结构', trigger: 'change' }],
   dataset: [{ required: true, message: '请选择数据集', trigger: 'change' }]
 }
 
-const trainableArchitectures = computed(() =>
-  store.architectures.filter((item) => item.implemented !== false)
+const TASK_OPTIONS = [
+  { value: 'classification', label: '图片识别', type: 'success' },
+  { value: 'detection', label: '目标检测', type: 'warning' },
+  { value: 'segmentation', label: '语义分割', type: 'info' }
+]
+const TASK_LABELS = Object.fromEntries(TASK_OPTIONS.map((item) => [item.value, item.label]))
+const TASK_TAG_TYPES = Object.fromEntries(TASK_OPTIONS.map((item) => [item.value, item.type]))
+
+function taskOf(item) {
+  return item?.task_type || item?.task || 'classification'
+}
+
+const taskArchitectures = computed(() =>
+  store.architectures.filter((item) => taskOf(item) === form.task_type)
 )
-const trainableDatasets = computed(() =>
-  store.datasets.filter((item) => (item.task_type || 'classification') === 'classification')
+const taskDatasets = computed(() =>
+  store.datasets.filter((item) => taskOf(item) === form.task_type)
 )
 const currentArchitecture = computed(() => store.architectureMap[form.architecture])
 const currentDataset = computed(() => store.datasets.find((item) => item.id === form.dataset))
+const canTrainCurrentTask = computed(() => currentArchitecture.value?.implemented !== false)
+const maxImageSize = computed(() =>
+  Math.max(224, currentArchitecture.value?.default_input_size || 224)
+)
 
 function sortDeviceOptions(options) {
   return [...options].sort((a, b) => Number(!a.available) - Number(!b.available))
@@ -234,7 +252,8 @@ onMounted(async () => {
   await refreshDeviceAvailability()
   if (!store.architectures.length) await store.bootstrap()
   if (!store.datasets.length) await store.fetchDatasets()
-  form.dataset = trainableDatasets.value[0]?.id || null
+  form.architecture = taskArchitectures.value[0]?.key || ''
+  form.dataset = taskDatasets.value[0]?.id || null
   const preset = recommendations[form.architecture]
   if (preset) Object.assign(form, preset)
   await loadRuns()
@@ -242,6 +261,18 @@ onMounted(async () => {
 })
 
 onUnmounted(() => timer && clearInterval(timer))
+
+watch(() => form.task_type, () => {
+  const firstArchitecture = taskArchitectures.value[0]
+  form.architecture = firstArchitecture?.key || ''
+  form.dataset = taskDatasets.value[0]?.id || null
+  if (firstArchitecture) {
+    form.image_size = Math.max(
+      firstArchitecture.min_input_size || 16,
+      Math.min(firstArchitecture.default_input_size || 224, maxImageSize.value)
+    )
+  }
+})
 
 watch(() => form.architecture, (key) => {
   const preset = recommendations[key]
@@ -269,6 +300,10 @@ async function buildDemoDataset() {
 
 async function submit() {
   await formRef.value?.validate()
+  if (!canTrainCurrentTask.value) {
+    ElMessage.warning('该功能的训练后端尚未接入，暂时不能开始训练')
+    return
+  }
   if (!store.datasets.length) {
     ElMessage.warning('请先创建数据集')
     return
@@ -331,13 +366,24 @@ function rowClass({ row }) {
           <el-form-item label="任务名称">
             <el-input v-model="form.name" placeholder="留空则自动命名" clearable />
           </el-form-item>
+          <el-form-item label="功能" prop="task_type">
+            <el-radio-group v-model="form.task_type">
+              <el-radio-button
+                v-for="item in TASK_OPTIONS"
+                :key="item.value"
+                :label="item.value"
+              >
+                {{ item.label }}
+              </el-radio-button>
+            </el-radio-group>
+          </el-form-item>
           <el-form-item label="网络结构" prop="architecture">
             <el-select v-model="form.architecture" style="width: 100%">
               <el-option
-                v-for="item in trainableArchitectures"
+                v-for="item in taskArchitectures"
                 :key="item.key"
                 :value="item.key"
-                :label="`${item.name}（${item.year} · ${item.family}）`"
+                :label="`${item.name}（${item.year} · ${item.family}）${item.implemented === false ? ' · 待接入' : ''}`"
               />
             </el-select>
           </el-form-item>
@@ -345,18 +391,20 @@ function rowClass({ row }) {
             <div style="display: flex; gap: 8px; width: 100%">
               <el-select v-model="form.dataset" placeholder="选择数据集" style="flex: 1">
                 <el-option
-                  v-for="item in trainableDatasets"
+                  v-for="item in taskDatasets"
                   :key="item.id"
                   :value="item.id"
                   :label="`${item.name}（${item.image_count} 张 / ${item.num_classes} 类）`"
                 />
               </el-select>
-              <el-button @click="buildDemoDataset">生成演示集</el-button>
+              <el-button v-if="form.task_type === 'classification'" @click="buildDemoDataset">
+                生成演示集
+              </el-button>
             </div>
           </el-form-item>
           <el-form-item label="输入尺寸">
             <el-slider v-model="form.image_size" :min="currentArchitecture?.min_input_size || 16"
-                       :max="224" :step="8" show-input
+                       :max="maxImageSize" :step="8" show-input
                        style="width: 100%" />
           </el-form-item>
           <el-form-item label="训练轮数">
@@ -430,8 +478,17 @@ function rowClass({ row }) {
               每轮只训练前 N 个 batch（0 = 全部），用于快速验证流程
             </span>
           </el-form-item>
+          <el-alert
+            v-if="!canTrainCurrentTask"
+            type="warning"
+            :closable="false"
+            show-icon
+            title="当前功能的训练后端尚未接入"
+            description="可以选择并查看对应的模型结构和数据集，但暂时不能启动训练。"
+            style="margin-bottom: 12px"
+          />
           <el-button type="primary" size="large" style="width: 100%" :loading="submitting"
-                     @click="submit">
+                     :disabled="!canTrainCurrentTask" @click="submit">
             <el-icon><VideoPlay /></el-icon>
             <span style="margin-left: 6px">开始训练</span>
           </el-button>
@@ -514,6 +571,13 @@ function rowClass({ row }) {
       <el-table :data="runs" style="width: 100%" size="small" :row-class-name="rowClass"
                 @row-click="selectRun" highlight-current-row>
         <el-table-column prop="name" label="任务" min-width="150" show-overflow-tooltip />
+        <el-table-column label="功能" width="100">
+          <template #default="{ row }">
+            <el-tag size="small" effect="plain" :type="TASK_TAG_TYPES[row.task_type] || 'success'">
+              {{ TASK_LABELS[row.task_type] || '图片识别' }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="architecture" label="结构" width="110" />
         <el-table-column prop="dataset_name" label="数据集" min-width="130" show-overflow-tooltip />
         <el-table-column label="状态" width="96">

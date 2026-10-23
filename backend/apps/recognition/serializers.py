@@ -8,7 +8,7 @@ from django.contrib.auth.models import User
 from rest_framework import serializers
 
 from ml.engine import SUPPORTED_DEVICES, is_device_available, normalize_device
-from ml.registry import implemented_architecture_keys
+from ml.registry import architecture_keys, get_architecture
 
 from .models import Dataset, PredictionRecord, TrainedModel, TrainingRun
 
@@ -38,13 +38,13 @@ class TrainingRunSerializer(serializers.ModelSerializer):
     class Meta:
         model = TrainingRun
         fields = [
-            "id", "name", "architecture", "architecture_name", "dataset", "dataset_name", "status",
-            "status_display", "epochs", "batch_size", "learning_rate", "weight_decay", "optimizer",
-            "scheduler", "image_size", "num_workers", "val_split", "label_smoothing", "seed",
-            "device", "augment", "max_batches_per_epoch", "class_weighted_loss", "progress",
-            "current_epoch", "num_classes", "class_names", "history", "metrics", "latest_metrics",
-            "best_accuracy", "duration_seconds", "log", "error", "created_at", "started_at",
-            "finished_at", "trained_model_id",
+            "id", "name", "task_type", "architecture", "architecture_name", "dataset",
+            "dataset_name", "status", "status_display", "epochs", "batch_size", "learning_rate",
+            "weight_decay", "optimizer", "scheduler", "image_size", "num_workers", "val_split",
+            "label_smoothing", "seed", "device", "augment", "max_batches_per_epoch",
+            "class_weighted_loss", "progress", "current_epoch", "num_classes", "class_names",
+            "history", "metrics", "latest_metrics", "best_accuracy", "duration_seconds", "log",
+            "error", "created_at", "started_at", "finished_at", "trained_model_id",
         ]
         read_only_fields = ["status", "progress", "current_epoch", "history", "metrics",
                             "latest_metrics", "best_accuracy", "duration_seconds", "log", "error",
@@ -62,15 +62,15 @@ class TrainingRunSerializer(serializers.ModelSerializer):
 
 class TrainingRunCreateSerializer(serializers.ModelSerializer):
     architecture = serializers.ChoiceField(
-        choices=[(key, key) for key in implemented_architecture_keys()]
+        choices=[(key, key) for key in architecture_keys()]
     )
     dataset = serializers.PrimaryKeyRelatedField(queryset=Dataset.objects.all())
 
     class Meta:
         model = TrainingRun
-        fields = ["name", "architecture", "dataset", "epochs", "batch_size", "learning_rate",
-                  "weight_decay", "optimizer", "scheduler", "image_size", "num_workers",
-                  "val_split", "label_smoothing", "seed", "device", "augment",
+        fields = ["name", "task_type", "architecture", "dataset", "epochs", "batch_size",
+                  "learning_rate", "weight_decay", "optimizer", "scheduler", "image_size",
+                  "num_workers", "val_split", "label_smoothing", "seed", "device", "augment",
                   "max_batches_per_epoch", "class_weighted_loss"]
 
     def validate_epochs(self, value):
@@ -109,19 +109,28 @@ class TrainingRunCreateSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         dataset = attrs["dataset"]
-        if dataset.task_type != Dataset.TaskType.CLASSIFICATION:
+        task_type = attrs.get("task_type", TrainingRun.TaskType.CLASSIFICATION)
+        arch = attrs["architecture"]
+        meta = get_architecture(arch)
+        if meta is None:
+            raise serializers.ValidationError({"architecture": "未知的模型结构"})
+        if dataset.task_type != task_type:
             raise serializers.ValidationError({
-                "dataset": "当前训练后端仅支持图片识别数据集，目标检测和语义分割训练尚待接入"
+                "dataset": "数据集功能与训练任务功能不一致"
+            })
+        if meta.get("task") != task_type:
+            raise serializers.ValidationError({
+                "architecture": "模型结构与训练任务功能不一致"
+            })
+        if not meta.get("implemented"):
+            raise serializers.ValidationError({
+                "architecture": "该模型的训练后端尚待接入，暂时不能开始训练"
             })
         if dataset.image_count < 4:
             raise serializers.ValidationError({"dataset": "数据集样本过少（至少 4 张图片）"})
         if len(dataset.class_names or []) < 2:
             raise serializers.ValidationError({"dataset": "数据集至少需要 2 个类别"})
-        arch = attrs["architecture"]
-        from ml.registry import get_architecture
-
-        meta = get_architecture(arch)
-        if meta and attrs["image_size"] < meta["min_input_size"]:
+        if attrs["image_size"] < meta["min_input_size"]:
             raise serializers.ValidationError(
                 {"image_size": f"{meta['name']} 的输入尺寸建议不小于 {meta['min_input_size']}"})
         if attrs.get("max_batches_per_epoch", 0) and attrs["max_batches_per_epoch"] < 1:
