@@ -170,7 +170,7 @@ REST_FRAMEWORK = {
 }
 
 # ------------------------------------------------------------------ 站点与账号
-SITE_NAME = "基于多种深度学习经典模型的图像识别系统"
+SITE_NAME = "基于多种深度学习经典模型的视觉学习系统"
 UNIVERSITY_NAME = "新疆师范大学"
 UNIVERSITY_EN_NAME = "Xinjiang Normal University"
 UNIVERSITY_BADGE = "XJNU · 1978"

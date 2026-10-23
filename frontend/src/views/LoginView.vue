@@ -85,7 +85,7 @@ async function submit() {
 
       <h2 class="system-name">{{ auth.config.site_name }}</h2>
       <p class="system-desc">
-        面向图像分类任务的多模型实验与识别平台，从零复现经典卷积神经网络，
+        面向视觉学习任务的多模型实验与识别平台，从零复现经典卷积神经网络，
         支持数据集管理、在线训练、模型评估与多模型对比推理。
       </p>
 

@@ -4,7 +4,7 @@ import { clearToken, getStoredUser, getToken, setStoredUser, setToken } from '..
 import { logAction } from '../utils/operationLog'
 
 export const DEFAULT_CONFIG = {
-  site_name: '基于多种深度学习经典模型的图像识别系统',
+  site_name: '基于多种深度学习经典模型的视觉学习系统',
   university: '新疆师范大学',
   university_en: 'Xinjiang Normal University',
   university_badge: 'XJNU · 1978',

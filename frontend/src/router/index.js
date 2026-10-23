@@ -95,8 +95,8 @@ router.beforeEach((to) => {
 
 router.afterEach((to) => {
   document.title = to.meta?.title
-    ? `${to.meta.title} · 深度学习图像识别系统`
-    : '基于多种深度学习经典模型的图像识别系统'
+    ? `${to.meta.title} · 深度学习视觉学习系统`
+    : '基于多种深度学习经典模型的视觉学习系统'
   if (to.meta?.public) return
   logAction({
     action: `进入「${to.meta?.title || to.path}」`,

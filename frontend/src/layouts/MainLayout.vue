@@ -131,7 +131,7 @@ async function submitPassword() {
       <div class="logo">
         <div class="logo-mark">XJNU</div>
         <div v-if="!collapsed" class="logo-text">
-          <div class="logo-title">图像识别系统</div>
+          <div class="logo-title">视觉学习系统</div>
           <div class="logo-sub">{{ auth.university }} · 经典深度模型</div>
         </div>
       </div>
