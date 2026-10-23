@@ -60,7 +60,13 @@ http.interceptors.response.use(
     if (!error.config?.silent) {
       ElMessage.error(String(message))
     }
-    return Promise.reject(new Error(String(message)))
+    const requestError = new Error(String(message))
+    requestError.detail = data?.detail || String(message)
+    requestError.errors = Array.isArray(data?.errors) ? data.errors : []
+    requestError.hint = data?.hint || ''
+    requestError.data = data
+    requestError.response = error.response
+    return Promise.reject(requestError)
   }
 )
 
@@ -97,7 +103,7 @@ export const api = {
   refreshDataset: (id) => http.post(`/datasets/${id}/refresh/`),
   deleteDataset: (id) => http.delete(`/datasets/${id}/`),
   buildDemoDataset: (payload) => http.post('/datasets/build-demo/', payload),
-  uploadDataset: (formData) => http.post('/datasets/', formData),
+  uploadDataset: (formData, config = {}) => http.post('/datasets/', formData, config),
 
   // 训练
   trainingRuns: (params) => http.get('/training-runs/', { params }),

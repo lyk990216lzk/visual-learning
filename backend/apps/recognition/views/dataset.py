@@ -15,7 +15,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
-from ml.datasets import IMAGE_EXTENSIONS, build_demo_dataset, scan_image_folder
+from ml.datasets import IMAGE_EXTENSIONS, build_demo_dataset
+from ml.task_datasets import DatasetFormatError, TASK_LABELS, TASK_TYPES, scan_dataset
 
 from ..models import Dataset, TrainingRun
 from ..permissions import IsAdminOrReadOnly
@@ -40,9 +41,18 @@ class DatasetViewSet(ModelViewSet):
         """上传 zip 数据集（内部结构为 ``<类别>/*.jpg`` 或 ``train/``、``val/`` 子目录）。"""
         payload = request.data
         name = (payload.get("name") or "").strip()
+        task_type = (payload.get("task_type") or Dataset.TaskType.CLASSIFICATION).strip().lower()
         upload = request.FILES.get("file") or request.FILES.get("archive")
         if not name:
             return Response({"detail": "请填写数据集名称"}, status=status.HTTP_400_BAD_REQUEST)
+        if task_type not in TASK_TYPES:
+            return Response(
+                {
+                    "detail": "请选择正确的数据集功能",
+                    "errors": ["功能必须为图片识别、目标检测或语义分割"],
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         if Dataset.objects.filter(name=name).exists():
             return Response({"detail": f"数据集「{name}」已存在"}, status=status.HTTP_400_BAD_REQUEST)
         if upload is None:
@@ -83,14 +93,23 @@ class DatasetViewSet(ModelViewSet):
         if len(entries) == 1 and entries[0].is_dir():
             root = entries[0]
 
-        info = scan_image_folder(root)
-        if not info["classes"]:
+        try:
+            scan_dataset(root, task_type)
+        except DatasetFormatError as exc:
             shutil.rmtree(target, ignore_errors=True)
-            return Response({"detail": "未在压缩包中找到类别子目录，请按 <类别名>/*.jpg 组织数据"},
-                            status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {
+                    "detail": f"数据集格式不符合{TASK_LABELS[task_type]}要求",
+                    "task_type": task_type,
+                    "errors": exc.errors,
+                    "hint": exc.hint,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         dataset = Dataset.objects.create(
             name=name,
+            task_type=task_type,
             description=payload.get("description", ""),
             path=str(root),
             is_demo=False,
@@ -136,12 +155,14 @@ class DatasetViewSet(ModelViewSet):
 
         if existing:
             existing.path = str(target)
+            existing.task_type = Dataset.TaskType.CLASSIFICATION
             existing.description = "由系统生成的合成几何图形数据集（圆形/正方形/三角形/十字/五角星/圆环）"
             existing.refresh_stats()
             dataset = existing
         else:
             dataset = Dataset.objects.create(
                 name=name,
+                task_type=Dataset.TaskType.CLASSIFICATION,
                 description="由系统生成的合成几何图形数据集（圆形/正方形/三角形/十字/五角星/圆环）",
                 path=str(target),
                 is_demo=True,
@@ -153,7 +174,17 @@ class DatasetViewSet(ModelViewSet):
     def refresh(self, request, pk=None):
         """重新扫描数据集目录，刷新类别与样本数量统计。"""
         dataset = self.get_object()
-        info = dataset.refresh_stats()
+        try:
+            info = dataset.refresh_stats()
+        except DatasetFormatError as exc:
+            return Response(
+                {
+                    "detail": "数据集目录已不符合当前功能要求",
+                    "errors": exc.errors,
+                    "hint": exc.hint,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         return Response({"dataset": DatasetSerializer(dataset).data, "info": info})
 
     @action(detail=True, methods=["get"])
@@ -163,6 +194,22 @@ class DatasetViewSet(ModelViewSet):
         limit = int(request.query_params.get("limit", 12))
         root = dataset.dir_path
         samples = []
+        if dataset.task_type != Dataset.TaskType.CLASSIFICATION:
+            for split in ("val", "train"):
+                image_dir = root / "images" / split
+                if not image_dir.exists():
+                    continue
+                images = [p for p in sorted(image_dir.rglob("*"))
+                          if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS]
+                for image in images[:max(1, limit)]:
+                    samples.append({
+                        "label": split,
+                        "name": image.relative_to(image_dir).as_posix(),
+                        "url": f"/api/datasets/{dataset.id}/image/?label={split}&name={image.relative_to(image_dir).as_posix()}",
+                    })
+                break
+            return Response({"count": len(samples), "results": samples[:limit]})
+
         for label in dataset.class_names or []:
             class_dir = root / "train" / label if (root / "train" / label).exists() else root / label
             if not class_dir.exists():
@@ -183,9 +230,21 @@ class DatasetViewSet(ModelViewSet):
         dataset = self.get_object()
         label = request.query_params.get("label", "")
         name = request.query_params.get("name", "")
-        if not label or not name or "/" in name or "/" in label or ".." in name:
+        name_path = Path(name)
+        if (not label or not name or name_path.is_absolute() or ".." in name_path.parts
+                or "/" in label):
             raise Http404("参数不合法")
         root = dataset.dir_path
+        if dataset.task_type != Dataset.TaskType.CLASSIFICATION:
+            if label not in {"train", "val", "test"}:
+                raise Http404("参数不合法")
+            image_root = (root / "images" / label).resolve()
+            candidate = (image_root / name_path).resolve()
+            if candidate.is_relative_to(image_root) and candidate.exists() and candidate.is_file():
+                return FileResponse(open(candidate, "rb"))
+            raise Http404("样本图片不存在")
+        if "/" in name:
+            raise Http404("参数不合法")
         candidates = [root / "train" / label / name, root / label / name,
                       root / "val" / label / name]
         for candidate in candidates:

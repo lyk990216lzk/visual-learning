@@ -12,9 +12,16 @@ from .paths import resolve_path, to_stored_path
 
 
 class Dataset(models.Model):
-    """一个 ImageFolder 结构的数据集（``root/<类别>/*.jpg`` 或 ``root/train|val/<类别>``）。"""
+    """图片识别、YOLO 目标检测或图片-掩码语义分割数据集。"""
+
+    class TaskType(models.TextChoices):
+        CLASSIFICATION = "classification", "图片识别"
+        DETECTION = "detection", "目标检测"
+        SEGMENTATION = "segmentation", "语义分割"
 
     name = models.CharField("名称", max_length=100, unique=True)
+    task_type = models.CharField("功能", max_length=20, choices=TaskType.choices,
+                                 default=TaskType.CLASSIFICATION)
     description = models.TextField("说明", blank=True, default="")
     path = models.CharField("目录路径", max_length=500)
     is_demo = models.BooleanField("演示数据集", default=False)
@@ -52,9 +59,9 @@ class Dataset(models.Model):
         return Path(settings.WEIGHTS_DIR) / safe_name
 
     def refresh_stats(self, save: bool = True) -> dict:
-        from ml.datasets import scan_image_folder
+        from ml.task_datasets import scan_dataset
 
-        info = scan_image_folder(self.dir_path)
+        info = scan_dataset(self.dir_path, self.task_type)
         if not info["has_split"] and info["image_count"]:
             # 扁平目录结构在训练时才会按比例分层划分，这里给出 8:2 的预估数量便于展示
             info["train_count"] = int(info["image_count"] * 0.8)

@@ -48,6 +48,9 @@ const rules = {
 const trainableArchitectures = computed(() =>
   store.architectures.filter((item) => item.implemented !== false)
 )
+const trainableDatasets = computed(() =>
+  store.datasets.filter((item) => (item.task_type || 'classification') === 'classification')
+)
 const currentArchitecture = computed(() => store.architectureMap[form.architecture])
 const currentDataset = computed(() => store.datasets.find((item) => item.id === form.dataset))
 
@@ -231,7 +234,7 @@ onMounted(async () => {
   await refreshDeviceAvailability()
   if (!store.architectures.length) await store.bootstrap()
   if (!store.datasets.length) await store.fetchDatasets()
-  form.dataset = store.datasets[0]?.id || null
+  form.dataset = trainableDatasets.value[0]?.id || null
   const preset = recommendations[form.architecture]
   if (preset) Object.assign(form, preset)
   await loadRuns()
@@ -342,7 +345,7 @@ function rowClass({ row }) {
             <div style="display: flex; gap: 8px; width: 100%">
               <el-select v-model="form.dataset" placeholder="选择数据集" style="flex: 1">
                 <el-option
-                  v-for="item in store.datasets"
+                  v-for="item in trainableDatasets"
                   :key="item.id"
                   :value="item.id"
                   :label="`${item.name}（${item.image_count} 张 / ${item.num_classes} 类）`"

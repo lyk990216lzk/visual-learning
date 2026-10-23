@@ -16,8 +16,9 @@ from .models import Dataset, PredictionRecord, TrainedModel, TrainingRun
 class DatasetSerializer(serializers.ModelSerializer):
     class Meta:
         model = Dataset
-        fields = ["id", "name", "description", "path", "is_demo", "num_classes", "class_names",
-                  "image_count", "train_count", "val_count", "class_counts", "created_at"]
+        fields = ["id", "name", "task_type", "description", "path", "is_demo", "num_classes",
+                  "class_names", "image_count", "train_count", "val_count", "class_counts",
+                  "created_at"]
         read_only_fields = ["path", "is_demo", "num_classes", "class_names", "image_count",
                             "train_count", "val_count", "class_counts", "created_at"]
 
@@ -108,6 +109,10 @@ class TrainingRunCreateSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         dataset = attrs["dataset"]
+        if dataset.task_type != Dataset.TaskType.CLASSIFICATION:
+            raise serializers.ValidationError({
+                "dataset": "当前训练后端仅支持图片识别数据集，目标检测和语义分割训练尚待接入"
+            })
         if dataset.image_count < 4:
             raise serializers.ValidationError({"dataset": "数据集样本过少（至少 4 张图片）"})
         if len(dataset.class_names or []) < 2:

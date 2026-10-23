@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '../api'
 import EChart from '../components/EChart.vue'
@@ -9,11 +9,41 @@ import { dateTime } from '../utils/format'
 const store = useAppStore()
 const uploading = ref(false)
 const uploadRef = ref(null)
-const form = reactive({ name: '', description: '' })
+const form = reactive({ name: '', task_type: 'classification', description: '' })
 const uploadFile = ref(null)
 const sampleDialog = ref(false)
 const samples = ref([])
 const sampleDataset = ref(null)
+const validationErrors = ref([])
+const validationHint = ref('')
+
+const TASK_OPTIONS = [
+  { value: 'classification', label: '图片识别', type: 'success' },
+  { value: 'detection', label: '目标检测', type: 'warning' },
+  { value: 'segmentation', label: '语义分割', type: 'info' }
+]
+
+const TASK_HINTS = {
+  classification: '只提供 <类别>/*.jpg 时按 val_split 自动划分；提供 train/val/<类别>/*.jpg 时使用固定验证集。',
+  detection: '固定验证集：data.yaml + images/train|val + labels/train|val；自动划分：只提供 images/train + labels/train。',
+  segmentation: '固定验证集：images/train|val + masks/train|val + classes.json；自动划分：只提供 images/train + masks/train + classes.json。'
+}
+
+const taskLabelMap = Object.fromEntries(TASK_OPTIONS.map((item) => [item.value, item.label]))
+const taskTypeMap = Object.fromEntries(TASK_OPTIONS.map((item) => [item.value, item.type]))
+const taskHint = computed(() => TASK_HINTS[form.task_type] || '')
+
+function clearValidationErrors() {
+  validationErrors.value = []
+  validationHint.value = ''
+}
+
+function showValidationError(error) {
+  validationErrors.value = error?.errors?.length ? error.errors : [error?.message || '数据集格式不符合要求']
+  validationHint.value = error?.hint || ''
+}
+
+watch(() => form.task_type, clearValidationErrors)
 
 const classChartOption = computed(() => {
   const dataset = sampleDataset.value
@@ -49,6 +79,7 @@ async function buildDemo() {
 
 function onFileChange(file) {
   uploadFile.value = file.raw
+  clearValidationErrors()
 }
 
 async function upload() {
@@ -62,17 +93,23 @@ async function upload() {
   }
   const formData = new FormData()
   formData.append('name', form.name)
+  formData.append('task_type', form.task_type)
   formData.append('description', form.description)
   formData.append('file', uploadFile.value)
+  clearValidationErrors()
   uploading.value = true
   try {
-    await api.uploadDataset(formData)
+    await api.uploadDataset(formData, { silent: true })
     ElMessage.success('数据集上传成功')
     form.name = ''
+    form.task_type = 'classification'
     form.description = ''
     uploadFile.value = null
     uploadRef.value?.clearFiles()
     await load()
+  } catch (error) {
+    showValidationError(error)
+    ElMessage.error('数据集未通过格式校验，请根据错误列表调整目录')
   } finally {
     uploading.value = false
   }
@@ -124,11 +161,22 @@ async function openSamples(dataset) {
       <div class="glass section">
         <div class="section-title">
           <span>上传自定义数据集</span>
-          <span class="sub">zip 格式，内部为 &lt;类别&gt;/*.jpg</span>
+          <span class="sub">先选择功能，再上传符合对应训练格式的 ZIP</span>
         </div>
         <el-form :model="form" label-width="80px" size="default">
           <el-form-item label="名称">
             <el-input v-model="form.name" placeholder="例如：水果分类" />
+          </el-form-item>
+          <el-form-item label="功能">
+            <el-radio-group v-model="form.task_type">
+              <el-radio-button
+                v-for="item in TASK_OPTIONS"
+                :key="item.value"
+                :label="item.value"
+              >
+                {{ item.label }}
+              </el-radio-button>
+            </el-radio-group>
           </el-form-item>
           <el-form-item label="说明">
             <el-input v-model="form.description" placeholder="可选" />
@@ -146,6 +194,16 @@ async function openSamples(dataset) {
             </el-upload>
           </el-form-item>
           <el-button type="primary" :loading="uploading" @click="upload">上传并解析</el-button>
+          <div class="dataset-format-hint">
+            {{ taskHint }}
+          </div>
+          <div v-if="validationErrors.length" class="dataset-validation-error" role="alert">
+            <div class="dataset-validation-title">数据集不符合要求</div>
+            <ul>
+              <li v-for="item in validationErrors" :key="item">{{ item }}</li>
+            </ul>
+            <div v-if="validationHint" class="dataset-validation-hint">{{ validationHint }}</div>
+          </div>
         </el-form>
       </div>
     </div>
@@ -153,10 +211,17 @@ async function openSamples(dataset) {
     <div class="glass section" style="margin-top: 14px">
       <div class="section-title">
         <span>数据集列表（{{ store.datasets.length }}）</span>
-        <span class="sub">支持 train/val 子目录，也支持扁平类别目录自动分层划分</span>
+        <span class="sub">图片识别、目标检测与语义分割分别按对应目录结构解析</span>
       </div>
       <el-table :data="store.datasets" style="width: 100%" size="small">
         <el-table-column prop="name" label="名称" min-width="160" show-overflow-tooltip />
+        <el-table-column label="功能" width="100">
+          <template #default="{ row }">
+            <el-tag size="small" effect="plain" :type="taskTypeMap[row.task_type] || 'info'">
+              {{ taskLabelMap[row.task_type] || '图片识别' }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="类型" width="100">
           <template #default="{ row }">
             <el-tag size="small" :type="row.is_demo ? 'warning' : 'info'" effect="plain">
@@ -192,11 +257,24 @@ async function openSamples(dataset) {
     <el-dialog v-model="sampleDialog" :title="`样本预览 · ${sampleDataset?.name || ''}`" width="72%">
       <div class="grid grid-2">
         <div>
-          <div class="section-title"><span>类别分布</span></div>
+          <div class="section-title">
+            <span>
+              {{ sampleDataset?.task_type === 'segmentation'
+                ? '类别像素分布'
+                : sampleDataset?.task_type === 'detection'
+                  ? '目标数量分布'
+                  : '类别分布' }}
+            </span>
+          </div>
           <EChart v-if="sampleDataset?.class_counts" :option="classChartOption" height="260px" />
         </div>
         <div>
-          <div class="section-title"><span>样本图片</span><span class="sub">每个类别抽样</span></div>
+          <div class="section-title">
+            <span>样本图片</span>
+            <span class="sub">
+              {{ sampleDataset?.task_type === 'classification' ? '每个类别抽样' : '训练/验证集抽样' }}
+            </span>
+          </div>
           <div class="sample-wall">
             <div v-for="item in samples" :key="item.url" class="wall-item">
               <el-image :src="item.url" fit="cover" style="width: 72px; height: 72px; border-radius: 8px">
@@ -214,6 +292,41 @@ async function openSamples(dataset) {
 </template>
 
 <style scoped>
+.dataset-format-hint {
+  margin-top: 9px;
+  color: var(--ir-text-dim);
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+.dataset-validation-error {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 107, 129, 0.42);
+  border-radius: 8px;
+  background: rgba(255, 107, 129, 0.08);
+  color: var(--ir-text);
+  font-size: 12px;
+}
+
+.dataset-validation-title {
+  color: #ff91a2;
+  font-weight: 600;
+}
+
+.dataset-validation-error ul {
+  margin: 7px 0 0;
+  padding-left: 20px;
+  line-height: 1.75;
+}
+
+.dataset-validation-hint {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 107, 129, 0.2);
+  color: var(--ir-text-dim);
+}
+
 .sample-wall {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
