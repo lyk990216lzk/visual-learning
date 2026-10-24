@@ -30,13 +30,13 @@ def predict_task_image(trained, image, options=None):
     """按训练任务功能分派到分类、检测或分割推理。"""
     options = options or {}
     if trained.task_type == "classification":
-        return predict_image(
+        result = predict_image(
             trained,
             image,
             top_k=int(options.get("top_k", 5) or 5),
         )
-    if trained.task_type == "detection":
-        return predict_detection(
+    elif trained.task_type == "detection":
+        result = predict_detection(
             trained,
             image,
             confidence=float(options.get("confidence", 0.25)),
@@ -44,17 +44,21 @@ def predict_task_image(trained, image, options=None):
             max_det=int(options.get("max_det", 100)),
             device=options.get("device", "cpu"),
         )
-    if trained.task_type == "segmentation":
-        return predict_segmentation(
+    elif trained.task_type == "segmentation":
+        result = predict_segmentation(
             trained,
             image,
             device=options.get("device", "cpu"),
         )
-    raise ValueError(f"不支持的识别功能：{trained.task_type}")
+    else:
+        raise ValueError(f"不支持的识别功能：{trained.task_type}")
+    result.setdefault("task_type", trained.task_type)
+    return result
 
 
 def _save_task_record(request, upload, raw, trained, result,
                       source=PredictionRecord.Source.UPLOAD, group_id=None):
+    result.setdefault("task_type", trained.task_type)
     stored_result = {key: value for key, value in result.items() if key != "mask_base64"}
     record = PredictionRecord(
         group_id=group_id or uuid.uuid4(),

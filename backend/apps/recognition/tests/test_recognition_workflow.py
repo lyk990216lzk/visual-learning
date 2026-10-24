@@ -178,11 +178,12 @@ class RecognitionWorkflowTest(TestCase):
                         self.root / f"{task_type}.pt",
                     )
                     result = {
-                        "task_type": task_type,
                         "architecture": architectures[task_type],
                         "model_name": f"{architectures[task_type]}@{dataset.name}",
                         **payload,
                     }
+                    if task_type != "classification":
+                        result["task_type"] = task_type
                     with patch(
                         "apps.recognition.views.vision_tasks.predict_task_image",
                         return_value=result,

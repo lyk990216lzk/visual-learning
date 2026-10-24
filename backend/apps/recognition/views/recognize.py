@@ -191,6 +191,7 @@ class BatchRecognizeView(APIView):
                 raw = upload.read()
                 image = open_image(raw)
                 result = predict_task_image(trained, image, request.data)
+                result.setdefault("task_type", trained.task_type)
             except (PredictorError, ValueError) as exc:
                 failed.append({"name": upload.name, "error": str(exc)})
                 continue

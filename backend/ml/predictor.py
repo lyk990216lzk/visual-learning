@@ -134,6 +134,7 @@ def predict_image(trained_model, image: Image.Image, top_k: int = 5) -> Dict:
         for value, idx in zip(values.tolist(), indices.tolist())
     ]
     return {
+        "task_type": "classification",
         "architecture": entry["architecture"],
         "model_id": trained_model.id,
         "model_name": trained_model.name,

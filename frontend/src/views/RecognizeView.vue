@@ -47,6 +47,7 @@ const sampleError = ref('')
 const selectedSampleKey = ref('')
 const batchSelectedKeys = ref([])
 
+const singleUploadRef = ref(null)
 const singleFile = ref(null)
 const localPreviewUrl = ref('')
 const batchFileList = ref([])
@@ -100,6 +101,16 @@ const batchSelectedSamples = computed(
 )
 const singleSourceFile = computed(() => singleFile.value || selectedSample.value?.file || null)
 const singleSourceName = computed(() => singleSourceFile.value?.name || '')
+const singleSourceMode = computed(() => {
+  if (singleFile.value) return 'local'
+  if (selectedSample.value) return 'sample'
+  return ''
+})
+const singleSourceLabel = computed(() => {
+  if (singleSourceMode.value === 'local') return '本地导入'
+  if (singleSourceMode.value === 'sample') return '任务数据集样例'
+  return '未选择图片'
+})
 const displayPreviewUrl = computed(() => localPreviewUrl.value || selectedSample.value?.previewUrl || '')
 const batchTotalCount = computed(
   () => batchSelectedSamples.value.length + batchLocalFiles.value.length
@@ -278,7 +289,6 @@ async function loadTaskSamples(taskId = selectedTaskId.value) {
     }
     samples.value = loaded.filter(Boolean)
     if (samples.value.length) {
-      selectedSampleKey.value = samples.value[0].key
       batchSelectedKeys.value = samples.value.slice(0, Math.min(4, samples.value.length)).map((item) => item.key)
       topK.value = Math.min(5, maxTopK.value)
     } else {
@@ -312,6 +322,7 @@ function selectSample(sample) {
   } else {
     selectedSampleKey.value = sample.key
     singleFile.value = null
+    singleUploadRef.value?.clearFiles()
     if (localPreviewUrl.value) {
       URL.revokeObjectURL(localPreviewUrl.value)
       localPreviewUrl.value = ''
@@ -356,6 +367,17 @@ function pickFile(uploadFile) {
     level: 'info'
   })
   return false
+}
+
+function clearSingleSource() {
+  selectedSampleKey.value = ''
+  singleFile.value = null
+  singleUploadRef.value?.clearFiles()
+  if (localPreviewUrl.value) {
+    URL.revokeObjectURL(localPreviewUrl.value)
+    localPreviewUrl.value = ''
+  }
+  invalidateResult()
 }
 
 function onBatchChange(_file, fileList) {
@@ -749,6 +771,30 @@ function batchResultSubtext(row) {
           <el-empty v-else :image-size="68" description="当前任务暂无可用样例" />
         </template>
 
+        <div v-if="!isBatch" class="single-source-state">
+          <span class="source-label">图片来源</span>
+          <span class="source-option" :class="{ active: singleSourceMode === 'sample' }">任务数据集样例</span>
+          <span class="source-or">或</span>
+          <span class="source-option" :class="{ active: singleSourceMode === 'local' }">本地图片</span>
+          <span class="source-current">{{ singleSourceLabel }}</span>
+          <el-button
+            v-if="singleSourceMode"
+            text
+            size="small"
+            @click="clearSingleSource"
+          >
+            清除选择
+          </el-button>
+        </div>
+
+        <div v-if="!isBatch && displayPreviewUrl" class="single-source-preview">
+          <img :src="displayPreviewUrl" :alt="singleSourceName" />
+          <div>
+            <span>{{ singleSourceLabel }}</span>
+            <strong>{{ singleSourceName }}</strong>
+          </div>
+        </div>
+
         <div class="local-upload-row">
           <div>
             <strong>{{ isBatch ? '也可以补充上传多张本地图片' : '也可以上传本地图片' }}</strong>
@@ -768,6 +814,7 @@ function batchResultSubtext(row) {
           </el-upload>
           <el-upload
             v-else
+              ref="singleUploadRef"
             :auto-upload="false"
             :show-file-list="false"
             accept="image/*"
@@ -1416,6 +1463,81 @@ function batchResultSubtext(row) {
   padding: 5px 6px;
   color: var(--ir-text-dim);
   font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.single-source-state {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding: 8px 9px;
+  border: 1px solid var(--ir-border);
+  border-radius: 9px;
+  color: var(--ir-text-dim);
+  font-size: 11px;
+}
+
+.source-label {
+  color: var(--ir-text);
+}
+
+.source-option {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.source-option.active {
+  color: #07111e;
+  background: var(--ir-accent);
+}
+
+.source-or {
+  font-size: 10px;
+}
+
+.source-current {
+  margin-left: auto;
+}
+
+.single-source-preview {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 9px;
+  padding: 8px;
+  border: 1px solid var(--ir-border);
+  border-radius: 9px;
+  background: rgba(15, 22, 40, 0.72);
+}
+
+.single-source-preview img {
+  display: block;
+  width: 96px;
+  height: 70px;
+  flex: 0 0 96px;
+  border-radius: 7px;
+  object-fit: cover;
+}
+
+.single-source-preview > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.single-source-preview span {
+  color: var(--ir-text-dim);
+  font-size: 10px;
+}
+
+.single-source-preview strong {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
