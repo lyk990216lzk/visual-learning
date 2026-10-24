@@ -13,9 +13,10 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from ml.predictor import PredictorError, open_image, predict_compare, predict_image
+from ml.comparison import compare_detection_outputs, compare_segmentation_outputs
+from ml.predictor import PredictorError, open_image, predict_image
 
-from ..models import PredictionRecord, TrainedModel
+from ..models import PredictionRecord, TrainedModel, TrainingRun
 from ..serializers import PredictionRecordSerializer
 from .utils import parse_architecture_list, resolve_trained_model
 
@@ -89,7 +90,7 @@ class RecognizeView(APIView):
 
 
 class CompareRecognizeView(APIView):
-    """POST /api/recognize/compare/ ：一张图片同时跑多个经典模型，对比预测结果。"""
+    """POST /api/recognize/compare/：同一数据集的任务模型对比。"""
 
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
@@ -101,58 +102,194 @@ class CompareRecognizeView(APIView):
         if message:
             return Response({"detail": message}, status=status.HTTP_400_BAD_REQUEST)
 
-        architectures = parse_architecture_list(request.data.get("architectures"))
-        if not architectures:
-            architectures = list(TrainedModel.objects.filter(is_active=True)
-                                 .values_list("architecture", flat=True))
-        if not architectures:
-            return Response({"detail": "请先训练至少一个模型，再进行多模型对比"},
+        raw_ids = request.data.get("trained_models")
+        if isinstance(raw_ids, (list, tuple)):
+            model_id_values = raw_ids
+        else:
+            model_id_values = str(raw_ids or "").split(",")
+        model_ids = []
+        for value in model_id_values:
+            value = str(value).strip()
+            if not value:
+                continue
+            if not value.isdigit():
+                return Response({"detail": "模型 ID 格式不正确"},
+                                status=status.HTTP_400_BAD_REQUEST)
+            model_id = int(value)
+            if model_id not in model_ids:
+                model_ids.append(model_id)
+
+        if model_ids:
+            if not 2 <= len(model_ids) <= 6:
+                return Response({"detail": "多模型对比需要选择 2~6 个模型"},
+                                status=status.HTTP_400_BAD_REQUEST)
+            queryset = TrainedModel.objects.select_related("dataset", "training_run").filter(
+                pk__in=model_ids
+            )
+            by_id = {model.id: model for model in queryset}
+            models = [by_id[model_id] for model_id in model_ids if model_id in by_id]
+            if len(models) != len(model_ids):
+                return Response({"detail": "部分所选模型不存在"},
+                                status=status.HTTP_400_BAD_REQUEST)
+        else:
+            # 兼容旧接口：按网络结构取分类模型，但仍要求共享同一数据集。
+            architectures = parse_architecture_list(request.data.get("architectures"))
+            models = []
+            for architecture in architectures:
+                try:
+                    models.append(resolve_trained_model(architecture, None))
+                except Exception:  # noqa: BLE001
+                    continue
+            if not models:
+                return Response({"detail": "请先训练至少两个模型，再进行多模型对比"},
+                                status=status.HTTP_400_BAD_REQUEST)
+
+        task_types = {model.task_type for model in models}
+        dataset_ids = {model.dataset_id for model in models}
+        if len(task_types) != 1:
+            return Response({"detail": "参与对比的模型必须使用同一识别功能"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if len(dataset_ids) != 1 or None in dataset_ids:
+            return Response({"detail": "参与对比的模型必须使用同一数据集"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        invalid_tasks = [
+            model.id
+            for model in models
+            if model.training_run is None
+            or model.training_run.status != TrainingRun.Status.SUCCESS
+        ]
+        if invalid_tasks:
+            return Response({
+                "detail": f"以下模型没有关联已完成的训练任务：{invalid_tasks}"
+            }, status=status.HTTP_400_BAD_REQUEST)
+        task_type = task_types.pop()
+        requested_task_type = (request.data.get("task_type") or task_type).strip().lower()
+        if requested_task_type != task_type:
+            return Response({"detail": "所选功能与模型任务类型不一致"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        missing_weights = [model.id for model in models if not model.resolved_path.is_file()]
+        if missing_weights:
+            return Response({"detail": f"模型权重文件不存在：{missing_weights}"},
                             status=status.HTTP_400_BAD_REQUEST)
 
-        top_k = int(request.data.get("top_k", 3) or 3)
-        model_map = {}
-        unavailable = []
-        for arch in architectures:
-            try:
-                model_map[arch] = resolve_trained_model(arch, None)
-            except Exception:  # noqa: BLE001 —— 没有训练的模型时跳过，不影响其它模型对比
-                unavailable.append(arch)
+        def metric_score(model):
+            metrics = model.metrics or {}
+            if task_type == "detection":
+                return float(
+                    metrics.get("map50_95")
+                    or metrics.get("map5095")
+                    or metrics.get("map50")
+                    or model.accuracy
+                    or 0
+                )
+            if task_type == "segmentation":
+                return float(metrics.get("miou") or metrics.get("best_miou")
+                             or model.macro_f1 or model.accuracy or 0)
+            return float(metrics.get("macro_f1") or model.macro_f1 or model.accuracy or 0)
 
-        if not model_map:
-            return Response({"detail": "所选模型都还没有训练好的权重，请先完成训练",
-                             "unavailable": unavailable}, status=status.HTTP_400_BAD_REQUEST)
+        ranked_models = sorted(models, key=lambda model: (metric_score(model), model.id), reverse=True)
+        best_model = ranked_models[0]
+
+        from .vision_tasks import _save_task_record, predict_task_image
 
         try:
             raw = upload.read()
             image = open_image(raw)
-            result = predict_compare(model_map, image, top_k=top_k)
         except PredictorError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         group_id = uuid.uuid4()
+        outputs = []
+        errors = []
         records = []
-        for item in result["results"]:
-            trained = model_map[item["architecture"]]
-            record = _save_record(group_id=group_id, upload=upload, image_bytes=raw,
-                                  source=PredictionRecord.Source.COMPARE, trained=trained, result=item,
-                                  user=request.user if request.user.is_authenticated else None)
-            records.append(record.id)
-            item["record_id"] = record.id
-            item["model_name"] = trained.name
-            from ml.registry import get_architecture
+        for trained in models:
+            try:
+                result = predict_task_image(trained, image, request.data)
+                result.setdefault("task_type", trained.task_type)
+            except (PredictorError, ValueError) as exc:
+                errors.append({
+                    "model_id": trained.id,
+                    "model_name": trained.name,
+                    "error": str(exc),
+                })
+                continue
+            record = _save_task_record(
+                request,
+                upload,
+                raw,
+                trained,
+                result,
+                source=PredictionRecord.Source.COMPARE,
+                group_id=group_id,
+            )
+            records.append(record)
+            result.update({
+                "record_id": record.id,
+                "model_id": trained.id,
+                "model_name": trained.name,
+                "architecture": trained.architecture,
+                "training_run_id": trained.training_run_id,
+                "task_id": trained.training_run_id,
+                "task_name": trained.training_run.name if trained.training_run else "",
+                "model_metric": metric_score(trained),
+            })
+            outputs.append(result)
 
-            meta = get_architecture(item["architecture"])
-            item["architecture_name"] = meta["name"] if meta else item["architecture"]
+        if not outputs:
+            return Response({
+                "detail": "所有模型推理失败",
+                "errors": errors,
+            }, status=status.HTTP_400_BAD_REQUEST)
 
-        first_image = PredictionRecord.objects.filter(pk=records[0]).first()
-        result.update({
+        successful_best = next(
+            (item for item in outputs if item["model_id"] == best_model.id),
+            max(outputs, key=lambda item: item.get("model_metric", 0)),
+        )
+        reference_id = successful_best["model_id"]
+        response = {
             "group_id": str(group_id),
-            "record_ids": records,
-            "image_url": request.build_absolute_uri(first_image.image.url)
-            if first_image and first_image.image else "",
-            "unavailable": unavailable,
-        })
-        return Response(result)
+            "task_type": task_type,
+            "dataset_id": models[0].dataset_id,
+            "dataset_name": models[0].dataset.name,
+            "recognition_type": "compare",
+            "selected_model_count": len(models),
+            "successful_model_count": len(outputs),
+            "best_model_id": best_model.id,
+            "best_model_name": best_model.name,
+            "best_model_metric": metric_score(best_model),
+            "reference_model_id": reference_id,
+            "reference_model_name": successful_best["model_name"],
+            "reference_fallback": reference_id != best_model.id,
+            "results": outputs,
+            "errors": errors,
+            "latency_ms": round(sum(item.get("latency_ms", 0) for item in outputs), 2),
+            "record_ids": [record.id for record in records],
+            "image_url": request.build_absolute_uri(records[0].image.url) if records else "",
+        }
+
+        try:
+            if task_type == "classification":
+                labels = [item["predicted_label"] for item in outputs]
+                consensus = max(set(labels), key=labels.count)
+                response.update({
+                    "consensus_label": consensus,
+                    "agreement": round(labels.count(consensus) / len(labels), 4),
+                })
+            elif task_type == "detection":
+                response["detection_comparison"] = compare_detection_outputs(
+                    outputs,
+                    reference_model_id=reference_id,
+                    iou_threshold=float(request.data.get("iou_threshold", 0.5)),
+                )
+            else:
+                segmentation_comparison = compare_segmentation_outputs(outputs, reference_id)
+                response["segmentation_comparison"] = segmentation_comparison
+                for item in response["results"]:
+                    item.pop("mask_base64", None)
+        except ValueError as exc:
+            return Response({"detail": f"对比结果聚合失败：{exc}"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        return Response(response)
 
 
 class BatchRecognizeView(APIView):
