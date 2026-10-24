@@ -60,6 +60,49 @@ class TrainingRunSerializer(serializers.ModelSerializer):
         return obj.trained_model_id
 
 
+class RecognitionTaskSerializer(serializers.ModelSerializer):
+    """可在推理页选择的已完成训练任务及其产出模型。"""
+
+    task_type_label = serializers.CharField(source="get_task_type_display", read_only=True)
+    architecture_name = serializers.SerializerMethodField()
+    dataset_name = serializers.CharField(source="dataset.name", read_only=True)
+    dataset_image_count = serializers.IntegerField(source="dataset.image_count", read_only=True)
+    trained_model_id = serializers.SerializerMethodField()
+    trained_model_name = serializers.SerializerMethodField()
+    trained_model_classes = serializers.SerializerMethodField()
+    trained_model_num_classes = serializers.SerializerMethodField()
+    trained_model_file_size = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TrainingRun
+        fields = [
+            "id", "name", "task_type", "task_type_label", "architecture",
+            "architecture_name", "status", "best_accuracy", "metrics", "finished_at",
+            "created_at", "dataset", "dataset_name", "dataset_image_count",
+            "trained_model_id", "trained_model_name", "trained_model_classes",
+            "trained_model_num_classes", "trained_model_file_size",
+        ]
+
+    def get_architecture_name(self, obj):
+        meta = get_architecture(obj.architecture)
+        return meta["name"] if meta else obj.architecture
+
+    def get_trained_model_id(self, obj):
+        return obj.trained_model_id
+
+    def get_trained_model_name(self, obj):
+        return obj.trained_model.name if obj.trained_model_id else ""
+
+    def get_trained_model_classes(self, obj):
+        return list(obj.trained_model.classes or []) if obj.trained_model_id else []
+
+    def get_trained_model_num_classes(self, obj):
+        return obj.trained_model.num_classes if obj.trained_model_id else obj.num_classes
+
+    def get_trained_model_file_size(self, obj):
+        return obj.trained_model.file_size if obj.trained_model_id else 0
+
+
 class TrainingRunCreateSerializer(serializers.ModelSerializer):
     architecture = serializers.ChoiceField(
         choices=[(key, key) for key in architecture_keys()]
@@ -169,12 +212,14 @@ class TrainedModelSerializer(serializers.ModelSerializer):
 class PredictionRecordSerializer(serializers.ModelSerializer):
     image_url = serializers.SerializerMethodField()
     username = serializers.SerializerMethodField()
+    training_run_id = serializers.IntegerField(source="trained_model.training_run_id",
+                                                read_only=True, allow_null=True)
 
     class Meta:
         model = PredictionRecord
         fields = ["id", "group_id", "user", "username", "image_url", "original_name",
                   "task_type", "source", "architecture", "model_name", "trained_model",
-                  "predicted_label", "confidence", "topk", "result_data", "latency_ms",
+                  "training_run_id", "predicted_label", "confidence", "topk", "result_data", "latency_ms",
                   "created_at"]
 
     def get_username(self, obj):

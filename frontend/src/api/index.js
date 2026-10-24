@@ -100,6 +100,13 @@ export const api = {
   // 数据集
   datasets: () => http.get('/datasets/'),
   datasetSamples: (id, params) => http.get(`/datasets/${id}/samples/`, { params }),
+  datasetImageBlob: (id, params) =>
+    http.get(`/datasets/${id}/image/`, {
+      params,
+      responseType: 'blob',
+      silent: true,
+      logOperation: false
+    }),
   refreshDataset: (id) => http.post(`/datasets/${id}/refresh/`),
   deleteDataset: (id) => http.delete(`/datasets/${id}/`),
   buildDemoDataset: (payload) => http.post('/datasets/build-demo/', payload),
@@ -107,6 +114,9 @@ export const api = {
 
   // 训练
   trainingRuns: (params) => http.get('/training-runs/', { params }),
+  recognizableTrainingRuns: (params) => http.get('/training-runs/recognizable/', { params }),
+  trainingRunSamples: (id, params) =>
+    http.get(`/training-runs/${id}/samples/`, { params, silent: true, logOperation: false }),
   trainingRun: (id) => http.get(`/training-runs/${id}/`),
   createTraining: (payload) => http.post('/training-runs/', payload),
   cancelTraining: (id) => http.post(`/training-runs/${id}/cancel/`),

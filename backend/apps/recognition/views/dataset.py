@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import random
 import shutil
 import zipfile
 from pathlib import Path
+from urllib.parse import urlencode
 
 from django.conf import settings
 from django.http import FileResponse, Http404
@@ -26,6 +28,57 @@ from ..serializers import DatasetSerializer
 def _safe_dir_name(name: str) -> str:
     cleaned = "".join(ch if (ch.isalnum() or ch in "-_") else "_" for ch in name.strip())
     return cleaned or "dataset"
+
+
+def sample_dataset_images(dataset: Dataset, limit: int = 6) -> list[dict]:
+    """随机抽取数据集图片，优先使用验证集，供识别页快速体验。"""
+    limit = max(1, min(int(limit or 6), 20))
+    root = dataset.dir_path
+    candidates = []
+
+    if dataset.task_type == Dataset.TaskType.CLASSIFICATION:
+        available_splits = [
+            split for split in ("val", "test", "train")
+            if (root / split).is_dir()
+        ]
+        split = available_splits[0] if available_splits else ""
+        split_root = root / split if split else root
+        for label in dataset.class_names or []:
+            class_dir = split_root / label
+            if not class_dir.is_dir():
+                continue
+            for image in class_dir.rglob("*"):
+                if image.is_file() and image.suffix.lower() in IMAGE_EXTENSIONS:
+                    candidates.append((label, split, image.relative_to(class_dir).as_posix()))
+    else:
+        split = next(
+            (
+                name for name in ("val", "test", "train")
+                if (root / "images" / name).is_dir()
+            ),
+            "",
+        )
+        image_root = root / "images" / split if split else None
+        if image_root is not None:
+            for image in image_root.rglob("*"):
+                if image.is_file() and image.suffix.lower() in IMAGE_EXTENSIONS:
+                    candidates.append((split, split, image.relative_to(image_root).as_posix()))
+
+    if not candidates:
+        return []
+    picked = random.sample(candidates, k=min(limit, len(candidates)))
+    results = []
+    for label, split, name in picked:
+        params = {"label": label, "name": name}
+        if split:
+            params["split"] = split
+        results.append({
+            "label": label,
+            "name": name,
+            "split": split,
+            "url": f"/api/datasets/{dataset.id}/image/?{urlencode(params)}",
+        })
+    return results
 
 
 class DatasetViewSet(ModelViewSet):
@@ -192,37 +245,8 @@ class DatasetViewSet(ModelViewSet):
         """返回若干张样本图片的访问地址，供前端预览网格使用。"""
         dataset = self.get_object()
         limit = int(request.query_params.get("limit", 12))
-        root = dataset.dir_path
-        samples = []
-        if dataset.task_type != Dataset.TaskType.CLASSIFICATION:
-            for split in ("val", "train"):
-                image_dir = root / "images" / split
-                if not image_dir.exists():
-                    continue
-                images = [p for p in sorted(image_dir.rglob("*"))
-                          if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS]
-                for image in images[:max(1, limit)]:
-                    samples.append({
-                        "label": split,
-                        "name": image.relative_to(image_dir).as_posix(),
-                        "url": f"/api/datasets/{dataset.id}/image/?label={split}&name={image.relative_to(image_dir).as_posix()}",
-                    })
-                break
-            return Response({"count": len(samples), "results": samples[:limit]})
-
-        for label in dataset.class_names or []:
-            class_dir = root / "train" / label if (root / "train" / label).exists() else root / label
-            if not class_dir.exists():
-                continue
-            images = [p for p in sorted(class_dir.iterdir())
-                      if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS][:max(1, limit // max(1, len(dataset.class_names)))]
-            for image in images:
-                samples.append({
-                    "label": label,
-                    "name": image.name,
-                    "url": f"/api/datasets/{dataset.id}/image/?label={label}&name={image.name}",
-                })
-        return Response({"count": len(samples), "results": samples[:limit]})
+        samples = sample_dataset_images(dataset, limit=limit)
+        return Response({"count": len(samples), "results": samples})
 
     @action(detail=True, methods=["get"])
     def image(self, request, pk=None):
@@ -230,9 +254,10 @@ class DatasetViewSet(ModelViewSet):
         dataset = self.get_object()
         label = request.query_params.get("label", "")
         name = request.query_params.get("name", "")
+        split = request.query_params.get("split", "")
         name_path = Path(name)
         if (not label or not name or name_path.is_absolute() or ".." in name_path.parts
-                or "/" in label):
+                or "/" in label or (split and split not in {"train", "val", "test"})):
             raise Http404("参数不合法")
         root = dataset.dir_path
         if dataset.task_type != Dataset.TaskType.CLASSIFICATION:
@@ -243,11 +268,13 @@ class DatasetViewSet(ModelViewSet):
             if candidate.is_relative_to(image_root) and candidate.exists() and candidate.is_file():
                 return FileResponse(open(candidate, "rb"))
             raise Http404("样本图片不存在")
-        if "/" in name:
-            raise Http404("参数不合法")
-        candidates = [root / "train" / label / name, root / label / name,
-                      root / "val" / label / name]
-        for candidate in candidates:
-            if candidate.exists() and candidate.is_file():
+        image_roots = []
+        if split:
+            image_roots.append(root / split / label)
+        image_roots.extend([root / "train" / label, root / label, root / "val" / label])
+        for image_root in image_roots:
+            resolved_root = image_root.resolve()
+            candidate = (resolved_root / name_path).resolve()
+            if candidate.is_relative_to(resolved_root) and candidate.exists() and candidate.is_file():
                 return FileResponse(open(candidate, "rb"))
         raise Http404("样本图片不存在")

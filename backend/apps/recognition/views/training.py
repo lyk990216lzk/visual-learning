@@ -13,7 +13,8 @@ from ml.trainer import manager
 
 from ..models import TrainingRun
 from ..permissions import IsAdminOrReadOnly
-from ..serializers import TrainingRunCreateSerializer, TrainingRunSerializer
+from ..serializers import (RecognitionTaskSerializer, TrainingRunCreateSerializer,
+                           TrainingRunSerializer)
 
 
 class TrainingRunViewSet(ModelViewSet):
@@ -100,3 +101,66 @@ class TrainingRunViewSet(ModelViewSet):
         """各状态任务数量统计，用于首页看板。"""
         rows = TrainingRun.objects.values("status").annotate(count=Count("id"))
         return Response({row["status"]: row["count"] for row in rows})
+
+    @action(detail=False, methods=["get"])
+    def recognizable(self, request):
+        """返回已完成、已产出有效权重、可直接用于识别的训练任务。"""
+        task_type = (request.query_params.get("task_type") or "").strip().lower()
+        valid_types = {value for value, _label in TrainingRun.TaskType.choices}
+        if task_type and task_type not in valid_types:
+            return Response({"detail": "不支持的识别功能"}, status=status.HTTP_400_BAD_REQUEST)
+
+        queryset = TrainingRun.objects.select_related("dataset", "trained_model").filter(
+            status=TrainingRun.Status.SUCCESS,
+            trained_model__isnull=False,
+        ).order_by("-finished_at", "-created_at")
+        if task_type:
+            queryset = queryset.filter(task_type=task_type)
+
+        try:
+            limit = int(request.query_params.get("limit", 100))
+        except (TypeError, ValueError):
+            limit = 100
+        limit = max(1, min(limit, 200))
+        results = []
+        for run in queryset[:limit * 2]:
+            if (
+                run.trained_model
+                and run.trained_model.task_type == run.task_type
+                and run.trained_model.resolved_path.is_file()
+            ):
+                results.append(run)
+            if len(results) >= limit:
+                break
+        return Response({
+            "count": len(results),
+            "results": RecognitionTaskSerializer(results, many=True).data,
+        })
+
+    @action(detail=True, methods=["get"])
+    def samples(self, request, pk=None):
+        """从该训练任务的数据集随机抽取图片，优先验证集。"""
+        from .dataset import sample_dataset_images
+
+        run = self.get_object()
+        if run.status != TrainingRun.Status.SUCCESS or not run.trained_model_id:
+            return Response({"detail": "该训练任务尚未完成或没有产出可用模型"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if run.trained_model.task_type != run.task_type:
+            return Response({"detail": "训练任务与产出模型的功能不一致"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if not run.trained_model.resolved_path.is_file():
+            return Response({"detail": "该训练任务的模型权重文件已丢失"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        try:
+            limit = int(request.query_params.get("limit", 6))
+        except (TypeError, ValueError):
+            limit = 6
+        samples = sample_dataset_images(run.dataset, limit=limit)
+        return Response({
+            "task_id": run.id,
+            "dataset_id": run.dataset_id,
+            "dataset_name": run.dataset.name,
+            "count": len(samples),
+            "results": samples,
+        })

@@ -151,6 +151,8 @@ def predict_detection(trained_model, image: Image.Image, confidence: float = 0.2
         "confidence": top_confidence,
         "detections": detections,
         "object_count": len(detections),
+        "width": image.width,
+        "height": image.height,
     }
 
 

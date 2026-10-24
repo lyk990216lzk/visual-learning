@@ -80,6 +80,8 @@ class RecognizeView(APIView):
                               user=request.user if request.user.is_authenticated else None)
         payload = dict(result)
         payload["record_id"] = record.id
+        payload["training_run_id"] = trained.training_run_id
+        payload["recognition_type"] = "single"
         payload["group_id"] = str(record.group_id)
         payload["image_url"] = request.build_absolute_uri(record.image.url) if record.image else ""
         payload["source"] = record.source
@@ -154,7 +156,7 @@ class CompareRecognizeView(APIView):
 
 
 class BatchRecognizeView(APIView):
-    """POST /api/recognize/batch/ ：一次上传多张图片，使用同一个模型批量识别。"""
+    """POST /api/recognize/batch/：使用同一训练任务模型批量识别图片。"""
 
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
@@ -169,13 +171,14 @@ class BatchRecognizeView(APIView):
         if len(uploads) > 20:
             return Response({"detail": "单次批量识别最多 20 张图片"}, status=status.HTTP_400_BAD_REQUEST)
 
-        top_k = int(request.data.get("top_k", 3) or 3)
         try:
             trained = resolve_trained_model(request.data.get("architecture"),
                                             request.data.get("trained_model"))
         except Exception as exc:  # noqa: BLE001
             detail = getattr(exc, "detail", str(exc))
             return Response({"detail": detail}, status=status.HTTP_400_BAD_REQUEST)
+
+        from .vision_tasks import _save_task_record, predict_task_image
 
         group_id = uuid.uuid4()
         results, failed = [], []
@@ -187,27 +190,55 @@ class BatchRecognizeView(APIView):
             try:
                 raw = upload.read()
                 image = open_image(raw)
-                result = predict_image(trained, image, top_k=top_k)
-            except PredictorError as exc:
+                result = predict_task_image(trained, image, request.data)
+            except (PredictorError, ValueError) as exc:
                 failed.append({"name": upload.name, "error": str(exc)})
                 continue
-            record = _save_record(group_id=group_id, upload=upload, image_bytes=raw,
-                                  source=PredictionRecord.Source.BATCH, trained=trained, result=result,
-                                  user=request.user if request.user.is_authenticated else None)
-            results.append({
+            record = _save_task_record(
+                request,
+                upload,
+                raw,
+                trained,
+                result,
+                source=PredictionRecord.Source.BATCH,
+                group_id=group_id,
+            )
+            item = {
                 "record_id": record.id,
                 "name": upload.name,
                 "predicted_label": result["predicted_label"],
                 "confidence": result["confidence"],
-                "topk": result["topk"],
                 "latency_ms": result["latency_ms"],
                 "image_url": request.build_absolute_uri(record.image.url) if record.image else "",
-            })
+                "task_type": result["task_type"],
+                "recognition_type": "batch",
+            }
+            if result["task_type"] == "detection":
+                item.update({
+                    "detections": result.get("detections", []),
+                    "object_count": result.get("object_count", 0),
+                })
+            elif result["task_type"] == "segmentation":
+                item.update({
+                    "classes": result.get("classes", []),
+                    "class_stats": result.get("class_stats", []),
+                    "width": result.get("width"),
+                    "height": result.get("height"),
+                })
+            else:
+                item.update({
+                    "topk": result.get("topk", []),
+                    "all_probabilities": result.get("all_probabilities", {}),
+                })
+            results.append(item)
 
         return Response({
             "group_id": str(group_id),
             "model_id": trained.id,
             "model_name": trained.name,
+            "task_type": trained.task_type,
+            "training_run_id": trained.training_run_id,
+            "recognition_type": "batch",
             "total": len(results),
             "results": results,
             "failed": failed,
