@@ -25,7 +25,7 @@ const RECOGNITION_MODES = [
   },
   {
     value: 'batch',
-    label: '多图识别',
+    label: '批量识别',
     desc: '一次选择多张图片，统一使用当前任务模型',
     icon: 'Files'
   }
@@ -464,7 +464,7 @@ async function submitBatch() {
     return
   }
   if (files.length > 20) {
-    ElMessage.warning('多图识别单次最多 20 张图片')
+    ElMessage.warning('批量识别单次最多 20 张图片')
     return
   }
 
@@ -476,9 +476,9 @@ async function submitBatch() {
     batchResult.value = await api.recognizeBatch(formData)
     result.value = null
     currentPage.value = 'result'
-    ElMessage.success(`多图识别完成，成功 ${batchResult.value.total} 张`)
+    ElMessage.success(`批量识别完成，成功 ${batchResult.value.total} 张`)
     logAction({
-      action: '多图识别完成',
+      action: '批量识别完成',
       detail: `${TASK_LABELS[task.task_type]} · 任务 #${task.id} · ${batchResult.value.total} 张图片`,
       module: '识别'
     })
@@ -689,7 +689,7 @@ function batchResultSubtext(row) {
       <section class="glass section workflow-step">
         <div class="step-head">
           <div class="step-title"><span>3</span>选择识别类型</div>
-          <span class="step-note">单图识别或多图识别</span>
+          <span class="step-note">单图识别或批量识别</span>
         </div>
         <div class="mode-grid">
           <button
@@ -833,7 +833,7 @@ function batchResultSubtext(row) {
           @click="runCurrentMode"
         >
           <el-icon><VideoPlay /></el-icon>
-          {{ isBatch ? `开始多图识别（${batchTotalCount} 张）` : '开始单图识别' }}
+          {{ isBatch ? `开始批量识别（${batchTotalCount} 张）` : '开始单图识别' }}
         </el-button>
       </section>
     </div>
@@ -869,7 +869,7 @@ function batchResultSubtext(row) {
             </div>
             <div class="result-summary">
               <div>
-                <div class="result-kicker">{{ taskTypeMeta.label }} · {{ isBatch ? '多图识别' : '单图识别' }}</div>
+                <div class="result-kicker">{{ taskTypeMeta.label }} · {{ isBatch ? '批量识别' : '单图识别' }}</div>
                 <div class="result-main">{{ labelText(result.predicted_label) || '未检出目标' }}</div>
                 <div class="result-note">结果已关联训练任务模型并写入识别历史</div>
               </div>
@@ -960,7 +960,7 @@ function batchResultSubtext(row) {
 
       <section v-else-if="isBatch && batchResult" class="glass section batch-results">
         <div class="section-title">
-          <span>多图识别结果</span>
+          <span>批量识别结果</span>
           <span class="sub">成功 {{ batchResult.total }} 张 · 失败 {{ batchResult.failed.length }} 张</span>
         </div>
         <el-alert
@@ -979,7 +979,7 @@ function batchResultSubtext(row) {
           </el-table-column>
           <el-table-column prop="name" label="文件名" min-width="145" show-overflow-tooltip />
           <el-table-column label="识别类型" width="95">
-            <template #default>多图识别</template>
+            <template #default>批量识别</template>
           </el-table-column>
           <el-table-column label="功能" width="92">
             <template #default="{ row }">
