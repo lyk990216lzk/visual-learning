@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import tempfile
+import uuid
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -220,6 +221,82 @@ class RecognitionWorkflowTest(TestCase):
         history = self.client.get("/api/records/", {"page_size": 10})
         self.assertEqual(history.status_code, 200)
         self.assertIn("training_run_id", history.data["results"][0])
+
+    def test_record_history_filters_tasks_and_groups_results(self):
+        dataset = self._make_classification_dataset()
+        run = self._make_task(
+            dataset,
+            TrainingRun.TaskType.CLASSIFICATION,
+            "resnet18",
+            self.root / "history-model.pt",
+        )
+        compare_group = uuid.uuid4()
+        batch_group = uuid.uuid4()
+        common = {
+            "user": self.user,
+            "task_type": TrainingRun.TaskType.CLASSIFICATION,
+            "architecture": "resnet18",
+            "trained_model": run.trained_model,
+            "latency_ms": 12,
+        }
+        PredictionRecord.objects.create(
+            group_id=compare_group,
+            original_name="compare.png",
+            source=PredictionRecord.Source.COMPARE,
+            model_name="resnet18-a",
+            predicted_label="star",
+            confidence=0.9,
+            topk=[{"label": "star", "probability": 0.9}],
+            **common,
+        )
+        PredictionRecord.objects.create(
+            group_id=compare_group,
+            original_name="compare.png",
+            source=PredictionRecord.Source.COMPARE,
+            model_name="resnet18-b",
+            predicted_label="circle",
+            confidence=0.8,
+            topk=[{"label": "circle", "probability": 0.8}],
+            **common,
+        )
+        PredictionRecord.objects.create(
+            group_id=batch_group,
+            original_name="batch.png",
+            source=PredictionRecord.Source.BATCH,
+            model_name="resnet18-a",
+            predicted_label="star",
+            confidence=0.7,
+            topk=[{"label": "star", "probability": 0.7}],
+            **common,
+        )
+
+        grouped = self.client.get(
+            "/api/records/",
+            {"grouped": 1, "training_run": run.id, "days": "all"},
+        )
+        self.assertEqual(grouped.status_code, 200)
+        self.assertEqual(grouped.data["count"], 2)
+        compare_item = next(
+            item for item in grouped.data["results"] if item["group_id"] == str(compare_group)
+        )
+        self.assertEqual(compare_item["training_run_name"], run.name)
+        self.assertEqual(compare_item["images_count"], 1)
+        self.assertEqual(compare_item["result_count"], 2)
+        self.assertEqual(set(compare_item["labels"]), {"star", "circle"})
+
+        stats = self.client.get(
+            "/api/records/stats/",
+            {"training_run": run.id, "days": "all", "label": "star"},
+        )
+        self.assertEqual(stats.status_code, 200)
+        self.assertEqual(stats.data["total"], 2)
+        self.assertEqual(stats.data["group_count"], 2)
+
+        options = self.client.get("/api/records/options/")
+        self.assertEqual(options.status_code, 200)
+        task = next(item for item in options.data["tasks"] if item["id"] == run.id)
+        self.assertEqual(task["name"], run.name)
+        self.assertEqual(set(task["classes"]), {"circle", "star"})
 
     def test_detection_instance_matching_uses_reference_model_boxes(self):
         self.assertAlmostEqual(box_iou([0, 0, 10, 10], [5, 0, 15, 10]), 1 / 3, places=5)

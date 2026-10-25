@@ -1,14 +1,49 @@
-# 用 Docker 运行 MySQL 8.0（推荐方式：不污染本机环境，删除方便）
+# 双容器部署：Django 应用 + MySQL 8.0
 #
-#   docker compose up -d            启动数据库（首次会拉取镜像，约 600MB）
-#   docker compose ps               查看状态，STATUS 出现 (healthy) 才可用
-#   docker compose logs -f mysql    查看启动日志
-#   docker compose down             停止容器（数据仍保留在数据卷 mysql_data 中）
-#   docker compose down -v          停止并删除数据卷（等于清空数据库，慎用）
-#
-# 启动后即可执行数据迁移： bash scripts/migrate_to_mysql.sh
+#   docker compose up -d --build     构建应用并启动两个容器
+#   docker compose ps                查看服务状态
+#   docker compose logs -f app       查看应用日志
+#   docker compose down              停止容器，保留数据库与业务数据
+#   docker compose down -v           停止容器并删除全部数据卷（慎用）
 
 services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: recognition-app:latest
+    container_name: recognition-app
+    restart: unless-stopped
+    init: true
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-replace-this-secret-before-production}
+      DJANGO_DEBUG: ${DJANGO_DEBUG:-1}
+      IR_SHOW_DEMO_ACCOUNT: ${IR_SHOW_DEMO_ACCOUNT:-1}
+      IR_DB_ENGINE: mysql
+      IR_DB_NAME: image_recognition
+      IR_DB_USER: ir_user
+      IR_DB_PASSWORD: ir_pass_2026
+      IR_DB_HOST: mysql
+      IR_DB_PORT: "3306"
+      TZ: Asia/Shanghai
+    ports:
+      - "8000:8000"
+    volumes:
+      - recognition_data:/app/backend/data
+      - recognition_media:/app/backend/media
+    shm_size: 2gb
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities:
+                - gpu
+
   mysql:
     image: mysql:8.0
     container_name: ir-mysql
@@ -38,3 +73,5 @@ services:
 
 volumes:
   mysql_data:
+  recognition_data:
+  recognition_media:

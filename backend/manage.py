@@ -44,7 +44,18 @@ IR_DB_ENGINE=mysql IR_DB_USER=ir_user IR_DB_PASSWORD=ir_pass_2026 bash scripts/s
 docker compose ps
 lsof -nP -iTCP:3306 -sTCP:LISTEN
 
-
+#dokcerfile文件进行启动构建的命令：docker compose up -d --build
+    这一条命令会自动完成：
+        1. 根据 Dockerfile 构建应用镜像。
+        2. 拉取 mysql:8.0，如果本地没有的话。
+        3. 创建 recognition_default 网络。
+        4. 创建 MySQL、数据集和媒体文件数据卷。
+        5. 启动 MySQL 容器。
+        6. 等待 MySQL 健康检查通过。
+        7. 启动应用容器。
+        8. 自动执行 manage.py migrate。
+        9. 自动创建演示账号。
+        10. 在 8000 端口启动 Django。
 
 改进：
     1、添加日志

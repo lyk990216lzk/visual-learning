@@ -214,16 +214,22 @@ class PredictionRecordSerializer(serializers.ModelSerializer):
     username = serializers.SerializerMethodField()
     training_run_id = serializers.IntegerField(source="trained_model.training_run_id",
                                                 read_only=True, allow_null=True)
+    training_run_name = serializers.SerializerMethodField()
 
     class Meta:
         model = PredictionRecord
         fields = ["id", "group_id", "user", "username", "image_url", "original_name",
                   "task_type", "source", "architecture", "model_name", "trained_model",
-                  "training_run_id", "predicted_label", "confidence", "topk", "result_data", "latency_ms",
-                  "created_at"]
+                  "training_run_id", "training_run_name", "predicted_label", "confidence", "topk",
+                  "result_data", "latency_ms", "created_at"]
 
     def get_username(self, obj):
         return obj.user.username if obj.user_id else "—"
+
+    def get_training_run_name(self, obj):
+        if not obj.trained_model_id or not obj.trained_model.training_run_id:
+            return ""
+        return obj.trained_model.training_run.name
 
     def get_image_url(self, obj):
         request = self.context.get("request")

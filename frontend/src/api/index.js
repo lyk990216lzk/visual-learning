@@ -145,6 +145,7 @@ export const api = {
   // 识别记录
   records: (params) => http.get('/records/', { params }),
   recordStats: (params) => http.get('/records/stats/', { params }),
+  recordOptions: () => http.get('/records/options/'),
   deleteRecord: (id) => http.delete(`/records/${id}/`),
   clearRecords: (payload) => http.post('/records/clear/', payload)
 }
