@@ -4,9 +4,19 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAuthStore } from '../store/auth'
 import { clearLogs, exportLogs, operationLogs } from '../utils/operationLog'
 
+defineProps({
+  embedded: {
+    type: Boolean,
+    default: false
+  },
+  collapsed: {
+    type: Boolean,
+    default: false
+  }
+})
+
 const auth = useAuthStore()
 const drawer = ref(false)
-const unseen = ref(0)
 const keyword = ref('')
 const moduleFilter = ref('')
 const autoScroll = ref(true)
@@ -59,7 +69,6 @@ function scrollToBottom() {
 
 function openDrawer() {
   drawer.value = true
-  unseen.value = 0
 }
 
 async function handleClear() {
@@ -96,12 +105,7 @@ function download() {
 
 watch(
   () => operationLogs.length,
-  (next, prev) => {
-    if (!drawer.value && next > prev) {
-      unseen.value += next - prev
-    }
-    scrollToBottom()
-  }
+  () => scrollToBottom()
 )
 
 watch(
@@ -128,15 +132,17 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="oplog-root">
+  <div class="oplog-root" :class="{ 'is-embedded': embedded, 'is-collapsed': collapsed }">
     <transition name="oplog-pop">
-      <button v-show="!drawer" type="button" class="oplog-fab" title="查看操作日志"
+      <button v-show="embedded || !drawer" type="button"
+              :class="[
+                embedded ? 'oplog-embedded-trigger' : 'oplog-fab',
+                { 'is-active': embedded && drawer }
+              ]"
+              title="查看操作日志" aria-label="查看操作日志"
               @click="openDrawer">
-        <el-icon :size="16"><Tickets /></el-icon>
-        <span class="oplog-fab-text">操作日志</span>
-        <span class="oplog-fab-count">{{ operationLogs.length }}</span>
-        <span v-if="errorCount" class="oplog-fab-error">{{ errorCount > 9 ? '9+' : errorCount }}</span>
-        <span v-else-if="unseen" class="oplog-fab-dot">{{ unseen > 99 ? '99+' : unseen }}</span>
+        <el-icon :size="18"><Tickets /></el-icon>
+        <span v-if="!embedded || !collapsed" class="oplog-fab-text">操作日志</span>
       </button>
     </transition>
 
@@ -239,41 +245,46 @@ onUnmounted(() => {
   transition: transform 0.18s ease, border-color 0.18s ease;
 }
 
+.oplog-root.is-embedded {
+  width: 100%;
+}
+
+.oplog-embedded-trigger {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 50px;
+  padding: 0 20px;
+  border: 0;
+  border-right: 2px solid transparent;
+  color: var(--ir-text);
+  background: transparent;
+  font-size: 14px;
+  text-align: left;
+  transition: color 0.18s ease, background 0.18s ease;
+}
+
+.oplog-embedded-trigger:hover {
+  color: var(--ir-text);
+  background: rgba(79, 140, 255, 0.08);
+}
+
+.oplog-embedded-trigger.is-active {
+  border-right-color: var(--ir-primary);
+  color: var(--ir-text);
+  background: linear-gradient(90deg, rgba(79, 140, 255, 0.24), rgba(79, 140, 255, 0.02));
+}
+
+.oplog-root.is-embedded.is-collapsed .oplog-embedded-trigger {
+  justify-content: center;
+  padding: 0 8px;
+}
+
 .oplog-fab:hover {
   transform: translateY(-2px);
   border-color: rgba(79, 140, 255, 0.65);
-}
-
-.oplog-fab-count {
-  min-width: 20px;
-  padding: 1px 7px;
-  border-radius: 999px;
-  background: rgba(79, 140, 255, 0.18);
-  color: #cfe0ff;
-  font-size: 11px;
-}
-
-.oplog-fab-dot,
-.oplog-fab-error {
-  position: absolute;
-  top: -6px;
-  right: -4px;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: 999px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 10px;
-  font-weight: 600;
-  color: #fff;
-  background: var(--ir-primary);
-  box-shadow: 0 0 0 2px #0b1020;
-}
-
-.oplog-fab-error {
-  background: var(--ir-danger);
 }
 
 .oplog-pop-enter-active,

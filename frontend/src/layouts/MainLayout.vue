@@ -40,6 +40,8 @@ const menus = computed(() =>
     .filter((item) => !item.meta?.adminOnly || auth.isAdmin)
     .sort((a, b) => menuOrder(a.path) - menuOrder(b.path))
 )
+const primaryMenus = computed(() => menus.value.filter((item) => item.path !== '/users'))
+const userMenus = computed(() => menus.value.filter((item) => item.path === '/users'))
 
 function menuOrder(path) {
   const order = ['/dashboard', '/models', '/datasets', '/training', '/recognize', '/compare', '/records', '/users']
@@ -136,12 +138,29 @@ async function submitPassword() {
         </div>
       </div>
 
-      <el-menu :default-active="route.path" :collapse="collapsed" router class="sidebar-menu">
-        <el-menu-item v-for="item in menus" :key="item.path" :index="item.path">
-          <el-icon><component :is="item.meta.icon" /></el-icon>
-          <template #title>{{ item.meta.title }}</template>
-        </el-menu-item>
-      </el-menu>
+      <div class="sidebar-nav">
+        <el-menu :default-active="route.path" :collapse="collapsed" router class="sidebar-menu">
+          <el-menu-item v-for="item in primaryMenus" :key="item.path" :index="item.path">
+            <el-icon><component :is="item.meta.icon" /></el-icon>
+            <template #title>{{ item.meta.title }}</template>
+          </el-menu-item>
+        </el-menu>
+
+        <OperationLogPanel embedded :collapsed="collapsed" />
+
+        <el-menu
+          v-if="userMenus.length"
+          :default-active="route.path"
+          :collapse="collapsed"
+          router
+          class="sidebar-menu"
+        >
+          <el-menu-item v-for="item in userMenus" :key="item.path" :index="item.path">
+            <el-icon><component :is="item.meta.icon" /></el-icon>
+            <template #title>{{ item.meta.title }}</template>
+          </el-menu-item>
+        </el-menu>
+      </div>
 
       <div class="sidebar-footer">
         <el-button text style="width: 100%" @click="collapsed = !collapsed">
@@ -226,7 +245,6 @@ async function submitPassword() {
       </template>
     </el-dialog>
 
-    <OperationLogPanel />
   </el-container>
 </template>
 
@@ -272,9 +290,15 @@ async function submitPassword() {
   color: var(--ir-text-dim);
 }
 
-.sidebar-menu {
+.sidebar-nav {
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   padding-top: 8px;
+}
+
+.sidebar-menu {
+  flex: none;
 }
 
 .sidebar-footer {
